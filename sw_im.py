@@ -32,6 +32,8 @@ f = 2*Omega*cz/fd.Constant(R0)  # Coriolis parameter
 g = fd.Constant(9.8)  # Gravitational constant
 b = fd.Function(V2, name="Topography")
 c = fd.sqrt(g*H)
+gamma0 = 1000.
+gamma = fd.Constant(gamma0)
 
 # Set up the exponential operator
 operator_in = fd.Function(W)
@@ -76,23 +78,49 @@ if vector_invariant:
         - dT*fd.inner(fd.grad(phi), uh)*hh*dx
         + dT*fd.jump(phi)*(uup('+')*hh('+')
                            - uup('-')*hh('-'))*dS
+        # the extra bit
+        + gamma*(fd.div(v)*(h1 - h0)*dx
+                 - dT*fd.inner(fd.grad(fd.div(v)), uh)*hh*dx
+                 + dT*fd.jump(fd.div(v))*(uup('+')*hh('+')
+                                          - uup('-')*hh('-'))*dS)
         )
 
-solver_parameters = {'mat_type': 'aij',
-                     'snes_monitor': None,
-                     'ksp_type': 'preonly',
-                     'pc_type': 'lu',
-                     'pc_factor_mat_solver_type': 'mumps'}
+lu_parameters = {'mat_type': 'aij',
+                 'snes_monitor': None,
+                 'ksp_type': 'preonly',
+                 'pc_type': 'lu',
+                 'pc_factor_mat_solver_type': 'mumps'}
+
+
+sparameters = {
+    'snes_monitor': None,
+    "ksp_type": "gmres",
+    'ksp_monitor': None,
+    "ksp_rtol": 1e-8,
+    "pc_type": "fieldsplit",
+    "pc_fieldsplit_type": "schur",
+    "pc_fieldsplit_schur_fact_type": "full",
+    "pc_fieldsplit_off_diag_use_amat": True,
+    "fieldsplit_0_ksp_type": "preonly",
+    "fieldsplit_0_pc_type": "lu",
+    "fieldsplit_1_ksp_type": "preonly",
+    "fieldsplit_1_pc_type": "python",
+    "fieldsplit_1_pc_python_type": "MassInvPC",
+    "fieldsplit_1_Mp_pc_type": "ilu"
+}
 
 nprob = fd.NonlinearVariationalProblem(eqn, Unp1)
+ctx = {"mu", -1/gamma}
 nsolver = fd.NonlinearVariationalSolver(nprob,
-                                        solver_parameters=solver_parameters)
+                                        solver_parameters=sparameters,
+                                        appctx=ctx)
 
 hours = 0.05
 dt = 60*60*hours
 dT.assign(dt)
 t = 0.
-hmax = 24
+dmax = 15
+hmax = 24*dmax
 tmax = 60.*60.*hmax
 hdump = 1
 dumpt = hdump*60.*60.
@@ -128,7 +156,7 @@ un.assign(u0)
 file_sw.write(un, etan)
 Unp1.assign(Un)
 
-print ('tmax', tmax, 'dt', dt)
+print('tmax', tmax, 'dt', dt)
 while t < tmax + 0.5*dt:
     print(t)
     t += dt
