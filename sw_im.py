@@ -3,7 +3,7 @@ import firedrake as fd
 # some domain, parameters and FS setup
 R0 = 6371220.
 H = fd.Constant(5960.)
-ref_level = 5
+ref_level = 3
 
 basemesh = fd.IcosahedralSphereMesh(radius=R0,
                                     refinement_level=0, degree=3)
@@ -34,7 +34,7 @@ f = 2*Omega*cz/fd.Constant(R0)  # Coriolis parameter
 g = fd.Constant(9.8)  # Gravitational constant
 b = fd.Function(V2, name="Topography")
 c = fd.sqrt(g*H)
-gamma0 = 1000.
+gamma0 = 10.
 gamma = fd.Constant(gamma0)
 
 # Set up the exponential operator
@@ -157,7 +157,7 @@ mgparameters = {
 nprob = fd.NonlinearVariationalProblem(eqn, Unp1)
 ctx = {"mu": -1/gamma}
 nsolver = fd.NonlinearVariationalSolver(nprob,
-                                        solver_parameters=mgparameters,
+                                        solver_parameters=sparameters,
                                         appctx=ctx)
 
 hours = 0.05
