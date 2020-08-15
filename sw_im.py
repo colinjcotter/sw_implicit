@@ -1,8 +1,5 @@
 import firedrake as fd
 
-hours = 0.2
-dt = 60*60*hours
-
 # some domain, parameters and FS setup
 R0 = 6371220.
 H = fd.Constant(5960.)
@@ -10,6 +7,7 @@ ref_level = 3
 
 mesh = fd.IcosahedralSphereMesh(radius=R0,
                                 refinement_level=ref_level, degree=3)
+R0 = fd.Constant(R0)
 cx = fd.SpatialCoordinate(mesh)
 mesh.init_cell_orientations(cx)
 
@@ -63,7 +61,7 @@ def both(u):
 
 K = 0.5*fd.inner(uh, uh)
 uup = 0.5 * (fd.dot(uh, n) + abs(fd.dot(uh, n)))
-dT = fd.Constant(dt)
+dT = fd.Constant(0.)
 dS = fd.dS
 
 vector_invariant = True
@@ -81,6 +79,7 @@ if vector_invariant:
         )
 
 solver_parameters = {'mat_type': 'aij',
+                     'snes_monitor': None,
                      'ksp_type': 'preonly',
                      'pc_type': 'lu',
                      'pc_factor_mat_solver_type': 'mumps'}
@@ -89,6 +88,9 @@ nprob = fd.NonlinearVariationalProblem(eqn, Unp1)
 nsolver = fd.NonlinearVariationalSolver(nprob,
                                         solver_parameters=solver_parameters)
 
+hours = 0.2
+dt = 60*60*hours
+dT.assign(dt)
 t = 0.
 hmax = 24
 tmax = 60.*60.*hmax
@@ -115,19 +117,15 @@ minarg = fd.Min(pow(rl, 2),
 bexpr = 2000.0*(1 - fd.sqrt(minarg)/rl)
 b.interpolate(bexpr)
 
-U = fd.Function(W)
-eU = fd.Function(W)
-DU = fd.Function(W)
-V = fd.Function(W)
-
-u0, h0 = U.split()
+u0, h0 = Un.split()
 u0.assign(un)
 h0.assign(etan + H - b)
 
 name = "sw_imp"
 file_sw = fd.File(name+'.pvd')
 etan.assign(h0 - H - b)
-file_sw.write(u0, h0, etan)
+un.assign(u0)
+file_sw.write(un, etan)
 
 print ('tmax', tmax, 'dt', dt)
 while t < tmax + 0.5*dt:
@@ -139,5 +137,7 @@ while t < tmax + 0.5*dt:
     Un.assign(Unp1)
 
     if tdump > dumpt - dt*0.5:
-        file_sw.write(u0, h0, etan)
+        etan.assign(h0 - H - b)
+        un.assign(u0)
+        file_sw.write(un, etan)
         tdump -= dumpt
