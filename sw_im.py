@@ -116,10 +116,48 @@ sparameters = {
     "fieldsplit_1_Mp_sub_pc_type": "ilu"
 }
 
+mgparameters = {
+    "mat_type":"matfree",
+    'snes_monitor': None,
+    "ksp_type": "gmres",
+    'ksp_monitor': None,
+    "ksp_rtol": 1e-8,
+    "pc_type": "fieldsplit",
+    "pc_fieldsplit_type": "schur",
+    "pc_fieldsplit_schur_fact_type": "full",
+    "pc_fieldsplit_off_diag_use_amat": True,
+    "fieldsplit_0_ksp_type": "preonly",
+    "fieldsplit_0_pc_type": "mg",
+    "fieldsplit_0_mg_coarse_ksp_type": "preonly",
+    "fieldsplit_0_mg_coarse_pc_type": "python",
+    "fieldsplit_0_mg_coarse_pc_python_type": "firedrake.AssembledPC",
+    "fieldsplit_0_mg_coarse_assembled_pc_type": "lu",
+    "fieldsplit_0_mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
+    "fieldsplit_0_mg_levels_ksp_type": "richardson",
+    "fieldsplit_0_mg_levels_ksp_max_it": 1,
+    "fieldsplit_0_mg_levels_ksp_richardson_scale": 1/3,
+    "fieldsplit_0_mg_levels_pc_type": "python",
+    "fieldsplit_0_mg_levels_pc_python_type": "firedrake.PatchPC",
+    "fieldsplit_0_mg_levels_patch_pc_patch_save_operators": True,
+    "fieldsplit_0_mg_levels_patch_pc_patch_partition_of_unity": False,
+    "fieldsplit_0_mg_levels_patch_pc_patch_sub_mat_type": "seqaij",
+    "fieldsplit_0_mg_levels_patch_pc_patch_construct_type": "star",
+    "fieldsplit_0_mg_levels_patch_pc_patch_multiplicative": False,
+    "fieldsplit_0_mg_levels_patch_pc_patch_symmetrise_sweep": False,
+    "fieldsplit_0_mg_levels_patch_pc_patch_construct_dim": 0,
+    "fieldsplit_0_mg_levels_patch_sub_ksp_type": "preonly",
+    "fieldsplit_0_mg_levels_patch_sub_pc_type": "lu",
+    "fieldsplit_1_ksp_type": "preonly",
+    "fieldsplit_1_pc_type": "python",
+    "fieldsplit_1_pc_python_type": "firedrake.MassInvPC",
+    "fieldsplit_1_Mp_pc_type": "bjacobi",
+    "fieldsplit_1_Mp_sub_pc_type": "ilu"
+}
+
 nprob = fd.NonlinearVariationalProblem(eqn, Unp1)
 ctx = {"mu": -1/gamma}
 nsolver = fd.NonlinearVariationalSolver(nprob,
-                                        solver_parameters=sparameters,
+                                        solver_parameters=mgparameters,
                                         appctx=ctx)
 
 hours = 0.05
