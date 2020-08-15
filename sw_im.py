@@ -105,12 +105,12 @@ sparameters = {
     "fieldsplit_0_pc_type": "lu",
     "fieldsplit_1_ksp_type": "preonly",
     "fieldsplit_1_pc_type": "python",
-    "fieldsplit_1_pc_python_type": "MassInvPC",
+    "fieldsplit_1_pc_python_type": "firedrake.MassInvPC",
     "fieldsplit_1_Mp_pc_type": "ilu"
 }
 
 nprob = fd.NonlinearVariationalProblem(eqn, Unp1)
-ctx = {"mu", -1/gamma}
+ctx = {"mu": -1/gamma}
 nsolver = fd.NonlinearVariationalSolver(nprob,
                                         solver_parameters=sparameters,
                                         appctx=ctx)
