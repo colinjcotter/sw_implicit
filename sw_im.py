@@ -5,12 +5,14 @@ R0 = 6371220.
 H = fd.Constant(5960.)
 ref_level = 5
 
-mesh = fd.IcosahedralSphereMesh(radius=R0,
-                                refinement_level=ref_level, degree=3)
+basemesh = fd.IcosahedralSphereMesh(radius=R0,
+                                    refinement_level=0, degree=3)
+mh = fd.MeshHierarchy(basemesh, ref_level)
+for mesh in mh:
+    x = fd.SpatialCoordinate(mesh)
+    mesh.init_cell_orientations(x)
+mesh = mh[-1]
 R0 = fd.Constant(R0)
-cx = fd.SpatialCoordinate(mesh)
-mesh.init_cell_orientations(cx)
-
 cx, cy, cz = fd.SpatialCoordinate(mesh)
 
 outward_normals = fd.CellNormal(mesh)
