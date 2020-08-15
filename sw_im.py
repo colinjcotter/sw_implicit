@@ -3,7 +3,7 @@ import firedrake as fd
 # some domain, parameters and FS setup
 R0 = 6371220.
 H = fd.Constant(5960.)
-ref_level = 3
+ref_level = 5
 
 mesh = fd.IcosahedralSphereMesh(radius=R0,
                                 refinement_level=ref_level, degree=3)
@@ -93,6 +93,7 @@ lu_parameters = {'mat_type': 'aij',
 
 
 sparameters = {
+    "mat_type":"matfree",
     'snes_monitor': None,
     "ksp_type": "gmres",
     'ksp_monitor': None,
@@ -102,11 +103,15 @@ sparameters = {
     "pc_fieldsplit_schur_fact_type": "full",
     "pc_fieldsplit_off_diag_use_amat": True,
     "fieldsplit_0_ksp_type": "preonly",
-    "fieldsplit_0_pc_type": "lu",
+    "fieldsplit_0_pc_type": "python",
+    "fieldsplit_0_pc_python_type": "firedrake.AssembledPC",
+    "fieldsplit_0_assembled_pc_type": "lu",
+    "fieldsplit_0_assembled_pc_factor_mat_solver_type": "mumps",
     "fieldsplit_1_ksp_type": "preonly",
     "fieldsplit_1_pc_type": "python",
     "fieldsplit_1_pc_python_type": "firedrake.MassInvPC",
-    "fieldsplit_1_Mp_pc_type": "ilu"
+    "fieldsplit_1_Mp_pc_type": "bjacobi",
+    "fieldsplit_1_Mp_sub_pc_type": "ilu"
 }
 
 nprob = fd.NonlinearVariationalProblem(eqn, Unp1)
