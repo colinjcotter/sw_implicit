@@ -62,7 +62,7 @@ def both(u):
 
 
 K = 0.5*fd.inner(uh, uh)
-uup = 0.5 * (fd.dot(uh, n) + fd.abs(fd.dot(uh, n)))
+uup = 0.5 * (fd.dot(uh, n) + abs(fd.dot(uh, n)))
 dT = fd.Constant(dt)
 dS = fd.dS
 
