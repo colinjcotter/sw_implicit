@@ -71,7 +71,7 @@ if vector_invariant:
         + dT*fd.inner(perp(fd.grad(fd.inner(v, perp(uh)))), uh)*dx
         + dT*fd.inner(both(perp(n)*fd.inner(v, perp(uh))),
                       both(Upwind*uh))*dS
-        - dT*fd.div(v)*(g*(hh - b) + K)*dx
+        - dT*fd.div(v)*(g*(hh + b) + K)*dx
         + phi*(h1 - h0)*dx
         - dT*fd.inner(fd.grad(phi), uh)*hh*dx
         + dT*fd.jump(phi)*(uup('+')*hh('+')
@@ -88,7 +88,7 @@ nprob = fd.NonlinearVariationalProblem(eqn, Unp1)
 nsolver = fd.NonlinearVariationalSolver(nprob,
                                         solver_parameters=solver_parameters)
 
-hours = 0.2
+hours = 0.05
 dt = 60*60*hours
 dT.assign(dt)
 t = 0.
@@ -123,9 +123,10 @@ h0.assign(etan + H - b)
 
 name = "sw_imp"
 file_sw = fd.File(name+'.pvd')
-etan.assign(h0 - H - b)
+etan.assign(h0 - H + b)
 un.assign(u0)
 file_sw.write(un, etan)
+Unp1.assign(Un)
 
 print ('tmax', tmax, 'dt', dt)
 while t < tmax + 0.5*dt:
@@ -137,7 +138,7 @@ while t < tmax + 0.5*dt:
     Un.assign(Unp1)
 
     if tdump > dumpt - dt*0.5:
-        etan.assign(h0 - H - b)
+        etan.assign(h0 - H + b)
         un.assign(u0)
         file_sw.write(un, etan)
         tdump -= dumpt
