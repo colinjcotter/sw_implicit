@@ -67,7 +67,7 @@ dS = fd.dS
 vector_invariant = True
 if vector_invariant:
     eqn = (
-        fd.inner(v, u1 - u0)*dx + fd.inner(v, f*perp(uh))*dx
+        fd.inner(v, u1 - u0)*dx + dT*fd.inner(v, f*perp(uh))*dx
         + dT*fd.inner(perp(fd.grad(fd.inner(v, perp(uh)))), uh)*dx
         + dT*fd.inner(both(perp(n)*fd.inner(v, perp(uh))),
                       both(Upwind*uh))*dS
