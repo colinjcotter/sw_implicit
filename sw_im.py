@@ -85,7 +85,7 @@ solver_parameters = {'mat_type': 'aij',
                      'pc_type': 'lu',
                      'pc_factor_mat_solver_type': 'mumps'}
 
-nprob = fd.NonlinearVariationalProblem(eqn, u1)
+nprob = fd.NonlinearVariationalProblem(eqn, Unp1)
 nsolver = fd.NonlinearVariationalSolver(nprob,
                                         solver_parameters=solver_parameters)
 
@@ -110,8 +110,8 @@ lambda_x = fd.atan_2(x[1]/R0, x[0]/R0)
 lambda_c = -fd.pi/2.0
 phi_x = fd.asin(x[2]/R0)
 phi_c = fd.pi/6.0
-minarg = fd.Min(fd.pow(rl, 2),
-                fd.pow(phi_x - phi_c, 2) + fd.pow(lambda_x - lambda_c, 2))
+minarg = fd.Min(pow(rl, 2),
+                pow(phi_x - phi_c, 2) + pow(lambda_x - lambda_c, 2))
 bexpr = 2000.0*(1 - fd.sqrt(minarg)/rl)
 b.interpolate(bexpr)
 
