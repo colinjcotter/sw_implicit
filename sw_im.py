@@ -80,11 +80,14 @@ if vector_invariant:
                            - uup('-')*hh('-'))*dS
         )
 
-solver_parameters = {'mat_type':'aij',
-                     '
+solver_parameters = {'mat_type': 'aij',
+                     'ksp_type': 'preonly',
+                     'pc_type': 'lu',
+                     'pc_factor_mat_solver_type': 'mumps'}
 
-GOT THIS FAR!
-NEED TO BUILD NONLINEAR SOLVER
+nprob = fd.NonlinearVariationalProblem(eqn, u1)
+nsolver = fd.NonlinearVariationalSolver(nprob,
+                                        solver_parameters=solver_parameters)
 
 t = 0.
 hmax = 24
@@ -93,27 +96,29 @@ hdump = 1
 dumpt = hdump*60.*60.
 tdump = 0.
 
+x = fd.SpatialCoordinate(mesh)
 u_0 = 20.0  # maximum amplitude of the zonal wind [m/s]
-u_max = Constant(u_0)
-u_expr = as_vector([-u_max*x[1]/R0, u_max*x[0]/R0, 0.0])
+u_max = fd.Constant(u_0)
+u_expr = fd.as_vector([-u_max*x[1]/R0, u_max*x[0]/R0, 0.0])
 eta_expr = - ((R0 * Omega * u_max + u_max*u_max/2.0)*(x[2]*x[2]/(R0*R0)))/g
-un = Function(V1, name="Velocity").project(u_expr)
-etan = Function(V2, name="Elevation").project(eta_expr)
+un = fd.Function(V1, name="Velocity").project(u_expr)
+etan = fd.Function(V2, name="Elevation").project(eta_expr)
 
 # Topography
-rl = pi/9.0
-lambda_x = atan_2(x[1]/R0, x[0]/R0)
-lambda_c = -pi/2.0
-phi_x = asin(x[2]/R0)
-phi_c = pi/6.0
-minarg = Min(pow(rl, 2), pow(phi_x - phi_c, 2) + pow(lambda_x - lambda_c, 2))
-bexpr = 2000.0*(1 - sqrt(minarg)/rl)
+rl = fd.pi/9.0
+lambda_x = fd.atan_2(x[1]/R0, x[0]/R0)
+lambda_c = -fd.pi/2.0
+phi_x = fd.asin(x[2]/R0)
+phi_c = fd.pi/6.0
+minarg = fd.Min(fd.pow(rl, 2),
+                fd.pow(phi_x - phi_c, 2) + fd.pow(lambda_x - lambda_c, 2))
+bexpr = 2000.0*(1 - fd.sqrt(minarg)/rl)
 b.interpolate(bexpr)
 
-U = Function(W)
-eU = Function(W)
-DU = Function(W)
-V = Function(W)
+U = fd.Function(W)
+eU = fd.Function(W)
+DU = fd.Function(W)
+V = fd.Function(W)
 
 u0, h0 = U.split()
 u0.assign(un)
@@ -122,7 +127,7 @@ h0.assign(etan + H - b)
 name = "sw_imp"
 file_sw = fd.File(name+'.pvd')
 etan.assign(h0 - H - b)
-file_sw.write(un, hn, etan)
+file_sw.write(u0, h0, etan)
 
 print ('tmax', tmax, 'dt', dt)
 while t < tmax + 0.5*dt:
@@ -130,34 +135,9 @@ while t < tmax + 0.5*dt:
     t += dt
     tdump += dt
 
-    #Average the nonlinearity
-    cheby.apply(U, USlow_in, expt)
-    SlowSolver.solve()
-    cheby.apply(USlow_out, DU, -expt)
-    DU *= wt
-    ensemble.allreduce(DU, V)
-    #Step forward V by half a step
-    V.assign(U + 0.5*V)
+    nsolver.solve()
+    Un.assign(Unp1)
 
-    #transform forwards to U^{n+1/2}
-    cheby2.apply(V, USlow_in, dt/2)
-
-    #Average the nonlinearity
-    cheby.apply(V, USlow_in, expt)
-    SlowSolver.solve()
-    cheby.apply(USlow_out, DU, -expt)
-    DU *= wt
-    ensemble.allreduce(DU, V)
-    #Advance U by half a step
-    cheby2.apply(U, DU, dt/2)
-    V.assign(DU + V)
-
-    #transform forwards to next timestep
-    cheby2.apply(V, U, dt/2)
-
-    if rank == 0:
-        if tdump > dumpt - dt*0.5:
-            un.assign(U_u)
-            etan.assign(U_eta)
-            file_sw.write(un, etan, b)
-            tdump -= dumpt
+    if tdump > dumpt - dt*0.5:
+        file_sw.write(u0, h0, etan)
+        tdump -= dumpt
