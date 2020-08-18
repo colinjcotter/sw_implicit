@@ -203,7 +203,7 @@ p = fd.TestFunction(V0)
 qn = fd.Function(V0, name="Relative Vorticity")
 veqn = q*p*dx + fd.inner(perp(fd.grad(p)), un)*dx
 vprob = fd.LinearVariationalProblem(fd.lhs(veqn), fd.rhs(veqn), qn)
-qsolver = fd.linearVariationalSolver(vprob)
+qsolver = fd.LinearVariationalSolver(vprob)
 
 name = "sw_imp"
 file_sw = fd.File(name+'.pvd')
