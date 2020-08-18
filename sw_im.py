@@ -3,11 +3,12 @@ import firedrake as fd
 # some domain, parameters and FS setup
 R0 = 6371220.
 H = fd.Constant(5960.)
-ref_level = 5
+base_level = 1
+ref_level = 5 - base_level
 deg = 1
 distribution_parameters = {"partition": True, "overlap_type": (fd.DistributedMeshOverlapType.VERTEX, 1)}
 basemesh = fd.IcosahedralSphereMesh(radius=R0,
-                                    refinement_level=0, degree=deg,
+                                    refinement_level=base_level, degree=deg,
                                     distribution_parameters = distribution_parameters)
 mh = fd.MeshHierarchy(basemesh, ref_level)
 for mesh in mh:
@@ -26,6 +27,7 @@ def perp(u):
 
 V1 = fd.FunctionSpace(mesh, "BDM", 2)
 V2 = fd.FunctionSpace(mesh, "DG", 1)
+V0 = fd.FunctionSpace(mesh, "CG", 3)
 W = fd.MixedFunctionSpace((V1, V2))
 
 u, eta = fd.TrialFunctions(W)
@@ -195,11 +197,20 @@ u0, h0 = Un.split()
 u0.assign(un)
 h0.assign(etan + H - b)
 
+q = TrialFunction(V0)
+p = TestFunction(V0)
+
+qn = Function(V0, name="Relative Vorticity")
+veqn = q*p*dx + inner(perp(grad(p)), un)*dx
+vprob = fd.LinearVariationalProblem(lhs(veqn), rhs(vqn), qn)
+qsolver = fd.linearVariationalSolver(vprob)
+
 name = "sw_imp"
 file_sw = fd.File(name+'.pvd')
 etan.assign(h0 - H + b)
 un.assign(u0)
-file_sw.write(un, etan)
+qsolver.solve()
+file_sw.write(un, etan, qn)
 Unp1.assign(Un)
 
 print('tmax', tmax, 'dt', dt)
@@ -214,5 +225,6 @@ while t < tmax + 0.5*dt:
     if tdump > dumpt - dt*0.5:
         etan.assign(h0 - H + b)
         un.assign(u0)
-        file_sw.write(un, etan)
+        qsolver.solver()
+        file_sw.write(un, etan, qn)
         tdump -= dumpt
