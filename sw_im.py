@@ -197,12 +197,12 @@ u0, h0 = Un.split()
 u0.assign(un)
 h0.assign(etan + H - b)
 
-q = TrialFunction(V0)
-p = TestFunction(V0)
+q = fd.TrialFunction(V0)
+p = fd.TestFunction(V0)
 
-qn = Function(V0, name="Relative Vorticity")
-veqn = q*p*dx + inner(perp(grad(p)), un)*dx
-vprob = fd.LinearVariationalProblem(lhs(veqn), rhs(vqn), qn)
+qn = fd.Function(V0, name="Relative Vorticity")
+veqn = q*p*dx + fd.inner(perp(fd.grad(p)), un)*dx
+vprob = fd.LinearVariationalProblem(fd.lhs(veqn), fd.rhs(vqn), qn)
 qsolver = fd.linearVariationalSolver(vprob)
 
 name = "sw_imp"
