@@ -3,10 +3,12 @@ import firedrake as fd
 # some domain, parameters and FS setup
 R0 = 6371220.
 H = fd.Constant(5960.)
-ref_level = 3
-
+ref_level = 5
+deg = 1
+distribution_parameters = {"partition": True, "overlap_type": (fd.DistributedMeshOverlapType.VERTEX, 1)}
 basemesh = fd.IcosahedralSphereMesh(radius=R0,
-                                    refinement_level=0, degree=3)
+                                    refinement_level=0, degree=deg,
+                                    distribution_parameters = distribution_parameters)
 mh = fd.MeshHierarchy(basemesh, ref_level)
 for mesh in mh:
     x = fd.SpatialCoordinate(mesh)
@@ -119,9 +121,9 @@ sparameters = {
 mgparameters = {
     "mat_type":"matfree",
     'snes_monitor': None,
-    "ksp_type": "gmres",
+    "ksp_type": "fgmres",
     'ksp_monitor': None,
-    "ksp_rtol": 1e-8,
+    "ksp_rtol": 1e-5,
     "pc_type": "fieldsplit",
     "pc_fieldsplit_type": "schur",
     "pc_fieldsplit_schur_fact_type": "full",
@@ -133,15 +135,14 @@ mgparameters = {
     "fieldsplit_0_mg_coarse_pc_python_type": "firedrake.AssembledPC",
     "fieldsplit_0_mg_coarse_assembled_pc_type": "lu",
     "fieldsplit_0_mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
-    "fieldsplit_0_mg_levels_ksp_type": "richardson",
-    "fieldsplit_0_mg_levels_ksp_max_it": 1,
-    "fieldsplit_0_mg_levels_ksp_richardson_scale": 1/3,
+    "fieldsplit_0_mg_levels_ksp_type": "gmres",
+    "fieldsplit_0_mg_levels_ksp_max_it": 3,
     "fieldsplit_0_mg_levels_pc_type": "python",
     "fieldsplit_0_mg_levels_pc_python_type": "firedrake.PatchPC",
     "fieldsplit_0_mg_levels_patch_pc_patch_save_operators": True,
     "fieldsplit_0_mg_levels_patch_pc_patch_partition_of_unity": False,
     "fieldsplit_0_mg_levels_patch_pc_patch_sub_mat_type": "seqaij",
-    "fieldsplit_0_mg_levels_patch_pc_patch_construct_type": "star",
+    "fieldsplit_0_mg_levels_patch_pc_patch_construct_type": "vanka",
     "fieldsplit_0_mg_levels_patch_pc_patch_multiplicative": False,
     "fieldsplit_0_mg_levels_patch_pc_patch_symmetrise_sweep": False,
     "fieldsplit_0_mg_levels_patch_pc_patch_construct_dim": 0,
@@ -157,7 +158,7 @@ mgparameters = {
 nprob = fd.NonlinearVariationalProblem(eqn, Unp1)
 ctx = {"mu": -1/gamma}
 nsolver = fd.NonlinearVariationalSolver(nprob,
-                                        solver_parameters=sparameters,
+                                        solver_parameters=mgparameters,
                                         appctx=ctx)
 
 hours = 0.05
