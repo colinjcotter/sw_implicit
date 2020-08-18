@@ -225,6 +225,6 @@ while t < tmax + 0.5*dt:
     if tdump > dumpt - dt*0.5:
         etan.assign(h0 - H + b)
         un.assign(u0)
-        qsolver.solver()
+        qsolver.solve()
         file_sw.write(un, etan, qn)
         tdump -= dumpt
