@@ -101,7 +101,7 @@ lu_parameters = {'mat_type': 'aij',
 sparameters = {
     "mat_type":"matfree",
     'snes_monitor': None,
-    "ksp_type": "gmres",
+    "ksp_type": "fgmres",
     'ksp_monitor': None,
     "ksp_rtol": 1e-8,
     "pc_type": "fieldsplit",
@@ -113,7 +113,9 @@ sparameters = {
     "fieldsplit_0_pc_python_type": "firedrake.AssembledPC",
     "fieldsplit_0_assembled_pc_type": "lu",
     "fieldsplit_0_assembled_pc_factor_mat_solver_type": "mumps",
-    "fieldsplit_1_ksp_type": "preonly",
+    "fieldsplit_1_ksp_type": "gmres",
+    "fieldsplit_1_ksp_converged_reason": None,
+    "fieldsplit_1_ksp_max_it": 3,
     "fieldsplit_1_pc_type": "python",
     "fieldsplit_1_pc_python_type": "firedrake.MassInvPC",
     "fieldsplit_1_Mp_pc_type": "bjacobi",
@@ -158,12 +160,12 @@ mgparameters = {
     "fieldsplit_1_Mp_sub_pc_type": "ilu"
 }
 
+
 nprob = fd.NonlinearVariationalProblem(eqn, Unp1)
 ctx = {"mu": -1/gamma}
 nsolver = fd.NonlinearVariationalSolver(nprob,
-                                        solver_parameters=mgparameters,
+                                        solver_parameters=sparameters,
                                         appctx=ctx)
-
 hours = 0.05
 dt = 60*60*hours
 dT.assign(dt)
@@ -183,7 +185,7 @@ eta_expr = - ((R0 * Omega * u_max + u_max*u_max/2.0)*(x[2]*x[2]/(R0*R0)))/g
 un = fd.Function(V1, name="Velocity").project(u_expr)
 etan = fd.Function(V2, name="Elevation").project(eta_expr)
 
-# Topography
+# Topography.
 rl = fd.pi/9.0
 lambda_x = fd.atan_2(x[1]/R0, x[0]/R0)
 lambda_c = -fd.pi/2.0
@@ -204,7 +206,9 @@ p = fd.TestFunction(V0)
 qn = fd.Function(V0, name="Relative Vorticity")
 veqn = q*p*dx + fd.inner(perp(fd.grad(p)), un)*dx
 vprob = fd.LinearVariationalProblem(fd.lhs(veqn), fd.rhs(veqn), qn)
-qsolver = fd.LinearVariationalSolver(vprob)
+qparams = {'ksp_converged_reason': None}
+qsolver = fd.LinearVariationalSolver(vprob, name="qsolver",
+                                     solver_parameters=qparams)
 
 name = "sw_imp"
 file_sw = fd.File(name+'.pvd')
