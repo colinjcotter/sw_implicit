@@ -100,34 +100,36 @@ $(u^{n+1},D^{n+1})$, the Newton updates $(u',D')$ satisfy
 Choosing $w \in \zeta_1$, where $\zeta_1=\{u\in V_1:\nabla\cdot u=0\}$,
 we have
 \begin{equation}
-  \langle w, u'_\zeta\rangle + \beta A'(w,u'_\zeta; u^{n+1})
-  + \beta\langle w, f(u'_\zeta)^\perp\rangle = -R_u(w; u^{n+1},D^{n+1}),
+  \langle w, u'_\zeta\rangle + \beta A'(w,u'_\zeta + u'_{\zeta^\perp}; u^{n+1})
+  + \beta\langle w, f(u'_\zeta + u'_{\zeta^\perp})^\perp\rangle = -R_u(w; u^{n+1},D^{n+1}),
   \quad \forall w\in \zeta_1,
+\label{eq:uzeta}
 \end{equation}
-where $u'_\zeta$ is the component of $u'$ in $\zeta_1$ according
-to the Helmholtz equation. Accordingly, we conclude that $u'_\zeta$
-is independent of $\gamma$. If we choose instead $w\in \zeta_1^\perp$,
-the orthogonal complement of $\zeta_1$ in $V_1$, divide by $\gamma$
-and send $\gamma\to \infty$, we get
+where $u'=u'_\zeta+u'_{\zeta^\perp}$ where $u'_\zeta\in \zeta_1$ and
+$u'_{\zeta^{\perp}}\in \zeta_1^\perp$, the orthogonal complement of
+$\zeta_1$ in $V_1$. If we choose instead $w\in \zeta_1^\perp$,
+divide by $\gamma$ and send $\gamma\to \infty$, we get
 \begin{align}
   \nonumber
    \beta B_u(\nabla\cdot w, u'_{\zeta^\perp}; u^{n+1},D^{n+1}) & = 
   -\beta B_u(\nabla\cdot w, u'_\zeta; u^{n+1},D^{n+1}) 
   - \beta B_D(\nabla\cdot w, D'; u^{n+1},D^{n+1}) \\
   & \qquad -\langle \nabla\cdot w, D' \rangle -R_D(\nabla\cdot w;u^{n+1},D^{n+1}), \qquad \forall w \in \zeta_1^\perp,
+\label{eq:uzetaperp}
 \end{align}
 where $u' = u'_{\zeta} + u'_{\zeta^\perp}$.  The solveability of this
-equation for $u'_{\zeta}$ and $D'$ needs a bit of work, but $B_u$ is
-something related to $\nabla\cdot u$ so this is essentially a grad-div
-operator that is solveable in $\zeta^{\perp}_1$. Let's assume it for
-now. This means that $u'_{\zeta^\perp}$ is asymptotically independent
-of $\gamma$ as $\gamma\to \infty$. 
+equation for $u'_{\zeta^\perp}$ given $u'_{\zeta}$ and $D'$ needs a
+bit of work, but $B_u$ is something related to $\nabla\cdot u$ so this
+is essentially a grad-div operator that is solveable in
+$\zeta^{\perp}_1$. Let's assume it for now. Then the system
+(\ref{eq:uzeta-eq}-\ref{uzetaperp}) can be solved for both components
+of $u'$, and we conclude that $u'$ is asymptotically independent of
+$\gamma$ as $\gamma\to \infty$.
 
 Now we use this to examine the asymptotics of the $\gamma\to \infty$
 limit of the Schur complement upon eliminating $u'$. To do this, we
 write the dependence of $u'$ on $D'$ as $u'(D') =u_0 + \gamma^{-1} u_1
-+ \mathcal{O}(\gamma^{-2})$, which is justified since we just showed
-that $u$ is independent of $\gamma$ as $\gamma\to \infty$. At
++ \mathcal{O}(\gamma^{-2})$, which we just justified. At
 $\mathcal{O}(1)$, we have
 \begin{align}
   \nonumber \beta B_u(\nabla\cdot w, u_0; u^{n+1},D^{n+1}) & = - \beta
@@ -135,6 +137,21 @@ $\mathcal{O}(1)$, we have
   \nabla\cdot w, D' \rangle -R_D(\nabla\cdot w;u^{n+1},D^{n+1}), \quad
   \forall w\in V_1.
 \end{align}
+For use later, we define $\mathcal{L}_0:V_2 \to \zeta_1^\perp$ such that
+\begin{align}
+  \nonumber \beta B_u(\nabla\cdot w, \mathcal{L}_0D'; u^{n+1},D^{n+1})  = - \beta
+  B_D(\nabla\cdot w, D'; u^{n+1},D^{n+1}) -\langle
+  \nabla\cdot w, D' \rangle, \quad
+  \forall w\in \zeta_1^\perp, 
+\end{align}
+and $r\in \zeta_1^\perp$ such that
+\begin{align}
+  \nonumber \beta B_u(\nabla\cdot w, r; u^{n+1},D^{n+1}) =
+  -R_D(\nabla\cdot w;u^{n+1},D^{n+1}), \quad
+  \forall w\in \zeta_1^\perp,
+\end{align}
+so that $u_0 = \mathcal{L}_0D' + r$.
+
 Since for all $\phi\in V_2$ there exists $w\in V_1$ such that
 $\nabla\cdot w = \phi$, the $\phi$ equation becomes $0=0$ at
 $\mathcal{O}(1)$ (that's why we need to go one term further in the
@@ -164,7 +181,7 @@ that $\nabla\cdot w_\phi=\phi$, we get
   & \qquad\qquad
   + \beta\langle \phi, gD'\rangle
   -R_u(w_\phi;u^{n+1},D^{n+1})
-  \quad \forall w \in V_1.
+  \quad \forall \phi \in V_2.
 \end{align}
 Hence, to this order, the Schur complement equation becomes
 \begin{equation}
