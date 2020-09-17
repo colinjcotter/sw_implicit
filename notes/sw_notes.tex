@@ -56,8 +56,8 @@ We now modify this formulation in augmented Lagrangian style so that
 it becomes: find $(u^{n+1},D^{n+1}) \in V_1\times V_2$ such that
 \begin{align}
   \nonumber
-  \langle w, u^{n+1}-u^n \rangle + \Delta t A(w; u)
-  + \Delta t\langle w, fu^{\perp}\rangle
+  \langle w, u^{n+1}-u^n \rangle + \Delta t A(w; u^{n+1/2})
+  + \Delta t\langle w, f(u^{n+1/2})^{\perp}\rangle
   - \Delta t\langle \nabla\cdot w, gD^{n+1/2}\rangle & \\
   \qquad + \gamma\left(
   \langle \nabla\cdot w, D^{n+1} - D^n \rangle
@@ -130,7 +130,7 @@ For later, we'll define $\mathcal{L}_0:V_2\to V_1$ by splitting
 $\mathcal{L}_0D'=v_\zeta + v_{\zeta^\perp}$, according to
 \begin{align}
     \langle w, v_\zeta\rangle + \beta A'(w,v_\zeta + v_{\zeta^\perp}; u^{n+1})
-  + \beta\langle w, f(v_\zeta + v_{\zeta^\perp})^\perp\rangle &= -R_u(w; u^{n+1},D^{n+1}),
+  + \beta\langle w, f(v_\zeta + v_{\zeta^\perp})^\perp\rangle &= 0,
   \quad \forall w\in \zeta_1, \\
   \nonumber
    \beta B_u(\nabla\cdot w, v_{\zeta^\perp}; u^{n+1},D^{n+1})  
@@ -195,13 +195,13 @@ Hence, to this order, the Schur complement equation becomes
 \begin{align}
   \nonumber
   \frac{1}{\gamma}\Big(-\langle w_{\phi}, \mathcal{L}_0D' \rangle 
-  - \beta A'(w_\phi, \mathcal{L}_0D'; u^{n+1}) & \\
+  - \beta A'(w_\phi, \mathcal{L}_0D'; u^{n+1}) \quad & \\
   \nonumber
 \qquad  \qquad   - \beta\langle w_\phi, f(\mathcal{L}_0D')^{\perp}\rangle
   + \beta\langle \phi, gD'\rangle\Big)
   &= \frac{1}{\gamma}\Big(R_u(w_\phi;u^{n+1},D^{n+1})
   -\langle w_{\phi}, r \rangle  \\
-  & \qquad -\beta A'(w_\phi, r; u^{n+1})
+  & \qquad\qquad -\beta A'(w_\phi, r; u^{n+1})
   - \beta\langle w_\phi, fr^{\perp}\rangle\Big),
   \quad \forall w \in V_1,
 \end{align}
