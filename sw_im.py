@@ -38,7 +38,7 @@ f = 2*Omega*cz/fd.Constant(R0)  # Coriolis parameter
 g = fd.Constant(9.8)  # Gravitational constant
 b = fd.Function(V2, name="Topography")
 c = fd.sqrt(g*H)
-gamma0 = 10.
+gamma0 = 10000.
 gamma = fd.Constant(gamma0)
 
 # Set up the exponential operator
@@ -102,6 +102,7 @@ sparameters = {
     "mat_type":"matfree",
     'snes_monitor': None,
     "ksp_type": "fgmres",
+    "ksp_gmres_modifiedgramschmidt": None,
     'ksp_monitor': None,
     "ksp_rtol": 1e-8,
     "pc_type": "fieldsplit",
@@ -114,7 +115,7 @@ sparameters = {
     "fieldsplit_0_assembled_pc_type": "lu",
     "fieldsplit_0_assembled_pc_factor_mat_solver_type": "mumps",
     "fieldsplit_1_ksp_type": "gmres",
-    "fieldsplit_1_ksp_converged_reason": None,
+#    "fieldsplit_1_ksp_converged_reason": None,
     "fieldsplit_1_ksp_max_it": 3,
     "fieldsplit_1_pc_type": "python",
     "fieldsplit_1_pc_python_type": "firedrake.MassInvPC",
@@ -160,16 +161,16 @@ mgparameters = {
     "fieldsplit_1_Mp_sub_pc_type": "ilu"
 }
 
-
-nprob = fd.NonlinearVariationalProblem(eqn, Unp1)
-ctx = {"mu": -1/gamma}
-nsolver = fd.NonlinearVariationalSolver(nprob,
-                                        solver_parameters=sparameters,
-                                        appctx=ctx)
 hours = 0.05
 dt = 60*60*hours
 dT.assign(dt)
 t = 0.
+
+nprob = fd.NonlinearVariationalProblem(eqn, Unp1)
+ctx = {"mu": g*dt/gamma/2}
+nsolver = fd.NonlinearVariationalSolver(nprob,
+                                        solver_parameters=sparameters,
+                                        appctx=ctx)
 dmax = 15
 hmax = 24*dmax
 tmax = 60.*60.*hmax
