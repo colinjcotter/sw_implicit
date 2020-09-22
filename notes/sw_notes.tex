@@ -24,9 +24,11 @@
 
 \usepackage{fancybox}
 \begin{document}
-\title{Notes on Augmented Lagrangian preconditioning for nonlinear SWE}
+\title{Notes on Augmented Lagrangian preconditioning for GFD}
 \author{Tous Nous}
 \maketitle
+
+\section{Rotating shallow water}
 
 Say that we have a continuous time mixed FEM formulation for the
 rotating shallow water equations given by:
@@ -210,4 +212,100 @@ $\mathcal{L}_0D'$ keeps the same or reduces the number of derivatives.
 Further, the operator $\phi\to w_\phi$ is like a negative gradient.
 This means that the operator with the most derivatives is the
 mass operator (fourth term).
+
+\section{Rotating compressible Euler equations}
+
+We can write the Newton iteration for the implicit midpoint rule for
+compatible FEM discretisation of the rotating compressible Euler equations
+in the form
+\begin{align}
+  V(w,(u',\Pi',\theta'); \bar{U}) & = -R_u[w], \quad \forall w\in V_2, \\
+  T(q,(u',\theta'; \bar{U}) & = -R_\theta[q], \quad \forall q\in V_\theta, \\
+  C(\phi,(u',\rho; \bar{U}) & = -R_\rho[\phi], \quad \forall \phi \in V_3, \\
+  P(\mu,(\rho',\theta',\Pi'); \bar{U}) & = -R_\Pi[\mu], \quad
+  \forall \mu \in V_3,
+\end{align}
+where $\bar{U}=(\bar{u},\bar{\theta},\bar{\rho},\bar{\Pi})$.
+
+Now, to make the augmented formulation, we take a mapping $\tau:V_2\to
+V_\theta$ that extracts the vertical part $w_v$, and transforms it into the
+equivalent $V_\theta$ function (i.e. removes $J$ quantities and takes
+the scalar part). Then, we augment the $u$ equation with all three
+other equations, to get
+\begin{align}
+  \nonumber
+  V(w,(u',\Pi',\theta'); \bar{U})
+  +\gamma T(\tau w,(u',\theta'; \bar{U}) & \\
+  \nonumber
+  \qquad +\gamma C(\nabla \cdot w_v,(u',\rho; \bar{U})
+  +\gamma P(\nabla\cdot w_v,(\rho',\theta',\Pi'); \bar{U})
+  & = -R_u[w]
+  -\gamma R_\theta[\tau w] & \\
+ & \qquad  -\gamma R_\rho[\nabla\cdot w_v]
+  -\gamma R_\Pi[\nabla\cdot w_v], \quad \forall w\in V_2, \\
+  T(q,(u',\theta'; \bar{U}) & = -R_\theta[q], \quad \forall q\in V_\theta, \\
+  C(\phi,(u',\rho; \bar{U}) & = -R_\rho[\phi], \quad \forall \phi \in V_3, \\
+  P(\mu,(\rho',\theta',\Pi'; \bar{U}); \bar{U}) & = -R_\Pi[\mu], \quad
+  \forall \mu \in V_3.
+\end{align}
+Then we consider a Schur complement preconditioner eliminating
+$(u',\rho',\theta')$ to get a single equation for $\Pi'$, and look for
+an approximate Schur complement. To analyse the Schur complement (and
+suggest an approximation), we choose $w\in V_2^v$ (the vertical part
+of $V_2$, so that $w=w_v$), and send $\gamma \to \infty$, to get
+\begin{equation}
+T(\tau w,(u',\theta'; \bar{U})
++C(\nabla \cdot w_v,(u',\rho'; \bar{U})
++P(\nabla\cdot w_v,(\rho',\theta',\Pi'); \bar{U})
+ = 
+- R_\theta[\tau w] - R_\rho[\nabla\cdot w_v]
+- R_\Pi[\nabla\cdot w_v], \quad \forall w\in V_2^v.
+\end{equation}
+Choosing $w \in V_2^h$ (horizontal part) gives
+\begin{equation}
+  U(w, (u',\pi',\theta'); \bar{U}) = R_u[w], \quad \forall w\in
+  V_2^h.
+\end{equation}
+Similar to the rotating shallow water equations, we define
+$\mathcal{L}:V_2 \to V_1\times V_2 \times V_\theta$ with
+$\mathcal{L}:\Pi \mapsto (\mathcal{L}_u\Pi,\mathcal{L}_\rho\Pi,
+\mathcal{L}_\theta\Pi)$, according to
+\begin{align}
+  \nonumber
+T(\tau w,(\mathcal{L}_u\Pi,\mathcal{L}_\theta\Pi; \bar{U})
++C(\nabla \cdot w_v,(\mathcal{L}_u\Pi,\mathcal{L}_\rho\Pi; \bar{U}) & \\
+\qquad +P_1(\nabla\cdot w_v,(\mathcal{L}_\rho\Pi,\mathcal{L}_\theta\Pi); \bar{U})
+& =
+- P_2(\nabla\cdot w_v,\Pi'; \bar{U}), \quad \forall w\in V_2^v, \\ 
+U_1(w, (\mathcal{L}_u\Pi,\mathcal{L}_\theta\Pi); \bar{U}) & =
+-U_2(w, (u',\Pi'); \bar{U}), \quad \forall w\in
+  V_2^h,
+\end{align}
+and $(r_u,r_\rho,r_\theta)\in V_1\times V_2 \times V_\theta$ according to
+\begin{align}
+  \nonumber
+T(\tau w,(r_u,r_\theta; \bar{U})
++C(\nabla \cdot w_v,(r_u,\rho; \bar{U})
++P_1(\nabla\cdot w_v,(r_\rho,r_\theta); \bar{U})
+ & = 
+- R_\theta[\tau w] - R_\rho[\nabla\cdot w_v] \\
+& \quad - R_\Pi[\nabla\cdot w_v], \quad \forall w\in V_2^v, \\ 
+  U_1(w, (r_u,r_\theta); \bar{U}) & = R_u[w], \quad \forall w\in
+  V_2^h,
+\end{align}
+where we have split up $P=P_1+P_2$ and $U=U_1+U_2$ into the part
+containing $u'$, $\rho'$ and $\theta'$ and the part containing $\Pi'$.
+Then, at leading order in $\gamma$, we have $(u',\rho'\theta')=
+(\mathcal{L}_u\Pi+r_u,\mathcal{L}_\rho\Pi+r_\rho,\mathcal{L}_\theta\Pi+r_\theta)$.
+This equation seems solvable (we don't need to solve it in practise, only in
+theory) because the mass term in $T$ turns into a mass term for the
+vertical part of $u'$.
+
+Now we define $\phi_\gamma$ by finding $w\in V_1^v$ such that
+$\tau w=\gamma$, and $\phi_\gamma = w$. Then we can conclude that
+\begin{equation}
+  T(\gamma) NEED TO JUST ELIMINATE DOWN TO PI
+\end{equation}
+
+
 \end{document}
