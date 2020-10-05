@@ -7,10 +7,13 @@ parser.add_argument('--base_level', type=int, default=1, help='Base refinement l
 parser.add_argument('--ref_level', type=int, default=5, help='Refinement level of icosahedral grid. Default 5.')
 parser.add_argument('--dmax', type=float, default=15, help='Final time in days. Default 24.')
 parser.add_argument('--dumpt', type=float, default=1, help='Dump time in hours. Default 1.')
+parser.add_argument('--gamma', type=float, default=1.0e5, help='Augmented Lagrangian scaling parameter. Default 10000.')
 parser.add_argument('--dt', type=float, default=1, help='Timestep in hours. Default 1.')
 parser.add_argument('--filename', type=str, default='w5')
 parser.add_argument('--coords_degree', type=int, default=1, help='Degree of polynomials for sphere mesh approximation.')
 parser.add_argument('--degree', type=int, default=1, help='Degree of finite element space (the DG space).')
+parser.add_argument('--kspschur', type=int, default=3, help='Number of KSP iterations on the Schur complement.')
+parser.add_argument('--kspmg', type=int, default=3, help='Number of KSP iterations in the MG levels.')
 parser.add_argument('--mg', action='store_true', help='Use MG for the A block if present, otherwise use LU.')
 args = parser.parse_known_args()
 args = args[0]
@@ -54,7 +57,7 @@ f = 2*Omega*cz/fd.Constant(R0)  # Coriolis parameter
 g = fd.Constant(9.8)  # Gravitational constant
 b = fd.Function(V2, name="Topography")
 c = fd.sqrt(g*H)
-gamma0 = 10000.
+gamma0 = args.gamma
 gamma = fd.Constant(gamma0)
 
 # Set up the exponential operator
@@ -110,7 +113,7 @@ if vector_invariant:
 sparameters = {
     "mat_type":"matfree",
     'snes_monitor': None,
-    "ksp_type": "fmgres",
+    "ksp_type": "fgmres",
     "ksp_gmres_modifiedgramschmidt": None,
     'ksp_monitor': None,
     "ksp_rtol": 1e-8,
@@ -122,7 +125,7 @@ sparameters = {
 
 bottomright = {
     "ksp_type": "gmres",
-    "ksp_max_it": 3,
+    "ksp_max_it": args.kspschur,
     "pc_type": "python",
     "pc_python_type": "firedrake.MassInvPC",
     "Mp_pc_type": "bjacobi",
@@ -148,7 +151,7 @@ topleft_MG = {
     "mg_coarse_assembled_pc_type": "lu",
     "mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
     "mg_levels_ksp_type": "gmres",
-    "mg_levels_ksp_max_it": 3,
+    "mg_levels_ksp_max_it": args.kspmg,
     "mg_levels_pc_type": "python",
     "mg_levels_pc_python_type": "firedrake.PatchPC",
     "mg_levels_patch_pc_patch_save_operators": True,
