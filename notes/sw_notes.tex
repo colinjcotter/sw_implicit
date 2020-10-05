@@ -206,7 +206,7 @@ Hence, to this order, the Schur complement equation becomes
   -\langle w_{\phi}, r \rangle  \\
   & \qquad\qquad -\beta A'(w_\phi, r; u^{n+1})
   - \beta\langle w_\phi, fr^{\perp}\rangle\Big),
-  \quad \forall w \in V_1,
+  \quad \forall \phi \in V_2,
 \end{align}
 $\mathcal{L}_0D'$ keeps the same or reduces the number of derivatives.
 Further, the operator $\phi\to w_\phi$ is like a negative gradient.
@@ -219,9 +219,9 @@ We can write the Newton iteration for the implicit midpoint rule for
 compatible FEM discretisation of the rotating compressible Euler equations
 in the form
 \begin{align}
-  V(w,(u',\Pi',\theta'); \bar{U}) & = -R_u[w], \quad \forall w\in V_2, \\
-  T(q,(u',\theta'; \bar{U}) & = -R_\theta[q], \quad \forall q\in V_\theta, \\
-  C(\phi,(u',\rho; \bar{U}) & = -R_\rho[\phi], \quad \forall \phi \in V_3, \\
+  B(w,(u',\Pi',\theta'); \bar{U}) & = -R_u[w], \quad \forall w\in V_2, \\
+  T(q,(u',\theta'); \bar{U}) & = -R_\theta[q], \quad \forall q\in V_\theta, \\
+  C(\phi,(u',\rho'); \bar{U}) & = -R_\rho[\phi], \quad \forall \phi \in V_3, \\
   P(\mu,(\rho',\theta',\Pi'); \bar{U}) & = -R_\Pi[\mu], \quad
   \forall \mu \in V_3,
 \end{align}
@@ -234,18 +234,18 @@ the scalar part). Then, we augment the $u$ equation with all three
 other equations, to get
 \begin{align}
   \nonumber
-  V(w,(u',\Pi',\theta'); \bar{U})
-  +\gamma T(\tau w,(u',\theta'; \bar{U}) & \\
+  B(w,(u',\Pi',\theta'); \bar{U})
+  +\gamma T(\tau w,(u',\theta'); \bar{U}) & \\
   \nonumber
-  \qquad +\gamma C(\nabla \cdot w_v,(u',\rho; \bar{U})
+  \qquad +\gamma C(\nabla \cdot w_v,(u',\rho'); \bar{U})
   +\gamma P(\nabla\cdot w_v,(\rho',\theta',\Pi'); \bar{U})
   & = -R_u[w]
   -\gamma R_\theta[\tau w] & \\
  & \qquad  -\gamma R_\rho[\nabla\cdot w_v]
   -\gamma R_\Pi[\nabla\cdot w_v], \quad \forall w\in V_2, \\
-  T(q,(u',\theta'; \bar{U}) & = -R_\theta[q], \quad \forall q\in V_\theta, \\
-  C(\phi,(u',\rho; \bar{U}) & = -R_\rho[\phi], \quad \forall \phi \in V_3, \\
-  P(\mu,(\rho',\theta',\Pi'; \bar{U}); \bar{U}) & = -R_\Pi[\mu], \quad
+  T(q,(u',\theta'); \bar{U}) & = -R_\theta[q], \quad \forall q\in V_\theta, \\
+  C(\phi,(u',\rho'); \bar{U}) & = -R_\rho[\phi], \quad \forall \phi \in V_3, \\
+  P(\mu,(\rho',\theta',\Pi'); \bar{U}); \bar{U}) & = -R_\Pi[\mu], \quad
   \forall \mu \in V_3.
 \end{align}
 Then we consider a Schur complement preconditioner eliminating
@@ -254,8 +254,8 @@ an approximate Schur complement. To analyse the Schur complement (and
 suggest an approximation), we choose $w\in V_2^v$ (the vertical part
 of $V_2$, so that $w=w_v$), and send $\gamma \to \infty$, to get
 \begin{equation}
-T(\tau w,(u',\theta'; \bar{U})
-+C(\nabla \cdot w_v,(u',\rho'; \bar{U})
+T(\tau w,(u',\theta'); \bar{U})
++C(\nabla \cdot w_v,(u',\rho'); \bar{U})
 +P(\nabla\cdot w_v,(\rho',\theta',\Pi'); \bar{U})
  = 
 - R_\theta[\tau w] - R_\rho[\nabla\cdot w_v]
@@ -263,7 +263,7 @@ T(\tau w,(u',\theta'; \bar{U})
 \end{equation}
 Choosing $w \in V_2^h$ (horizontal part) gives
 \begin{equation}
-  U(w, (u',\pi',\theta'); \bar{U}) = R_u[w], \quad \forall w\in
+  B(w, (u',\pi',\theta'); \bar{U}) = R_u[w], \quad \forall w\in
   V_2^h.
 \end{equation}
 Similar to the rotating shallow water equations, we define
@@ -273,27 +273,27 @@ $\mathcal{L}:\Pi \mapsto (\mathcal{L}_u\Pi,\mathcal{L}_\rho\Pi,
 \begin{align}
   \nonumber
 T(\tau w,(\mathcal{L}_u\Pi,\mathcal{L}_\theta\Pi; \bar{U})
-+C(\nabla \cdot w_v,(\mathcal{L}_u\Pi,\mathcal{L}_\rho\Pi; \bar{U}) & \\
++C(\nabla \cdot w_v,(\mathcal{L}_u\Pi,\mathcal{L}_\rho\Pi); \bar{U}) & \\
 \qquad +P_1(\nabla\cdot w_v,(\mathcal{L}_\rho\Pi,\mathcal{L}_\theta\Pi); \bar{U})
 & =
-- P_2(\nabla\cdot w_v,\Pi'; \bar{U}), \quad \forall w\in V_2^v, \\ 
-U_1(w, (\mathcal{L}_u\Pi,\mathcal{L}_\theta\Pi); \bar{U}) & =
--U_2(w, (u',\Pi'); \bar{U}), \quad \forall w\in
+- P_2(\nabla\cdot w_v,\Pi'); \bar{U}), \quad \forall w\in V_2^v, \\ 
+B_1(w, (\mathcal{L}_u\Pi,\mathcal{L}_\theta\Pi); \bar{U}) & =
+-B_2(w, (u',\Pi'); \bar{U}), \quad \forall w\in
   V_2^h,
 \end{align}
 and $(r_u,r_\rho,r_\theta)\in V_1\times V_2 \times V_\theta$ according to
 \begin{align}
   \nonumber
 T(\tau w,(r_u,r_\theta; \bar{U})
-+C(\nabla \cdot w_v,(r_u,\rho; \bar{U})
++C(\nabla \cdot w_v,(r_u,\rho); \bar{U})
 +P_1(\nabla\cdot w_v,(r_\rho,r_\theta); \bar{U})
  & = 
 - R_\theta[\tau w] - R_\rho[\nabla\cdot w_v] \\
 & \quad - R_\Pi[\nabla\cdot w_v], \quad \forall w\in V_2^v, \\ 
-  U_1(w, (r_u,r_\theta); \bar{U}) & = R_u[w], \quad \forall w\in
+  B_1(w, (r_u,r_\theta); \bar{U}) & = R_u[w], \quad \forall w\in
   V_2^h,
 \end{align}
-where we have split up $P=P_1+P_2$ and $U=U_1+U_2$ into the part
+where we have split up $P=P_1+P_2$ and $B=B_1+B_2$ into the part
 containing $u'$, $\rho'$ and $\theta'$ and the part containing $\Pi'$.
 Then, at leading order in $\gamma$, we have $(u',\rho'\theta')=
 (\mathcal{L}_u\Pi+r_u,\mathcal{L}_\rho\Pi+r_\rho,\mathcal{L}_\theta\Pi+r_\theta)$.
@@ -304,8 +304,37 @@ vertical part of $u'$.
 Now we define $\phi_\gamma$ by finding $w\in V_1^v$ such that
 $\tau w=\gamma$, and $\phi_\gamma = w$. Then we can conclude that
 \begin{equation}
-  T(\gamma) NEED TO JUST ELIMINATE DOWN TO PI
+T(\gamma,(r_u,r_\theta; \bar{U})
++C(\phi_\gamma,(r_u,\rho); \bar{U})
++P_1(\phi_\gamma,(r_\rho,r_\theta); \bar{U})
+  = 
+- R_\theta[\gamma] - R_\rho[\phi_\gamma]
+- R_\Pi[\phi_\gamma], \quad \forall \gamma\in V_\theta.
 \end{equation}
+Combining through the $\rho$ and $\Pi$ equations, we end up with
+$0=0$ at leading order in $\gamma$, so we need to go the next order.
 
+Writing $u'=u_0 + \gamma^{-1}u_1 + \mathcal{O}(\gamma^{-2})$, and
+similar for $\theta'$ and $\rho'$, at $\mathcal{O}(\gamma^{-1})$ we
+get
+\begin{align}
+  \nonumber
+  B(w,(u'_0,\Pi'_0,\theta'_0); \bar{U})
+  +T(\tau w,(u'_1,\theta'_1); \bar{U}) & \\
+  \nonumber
+  \qquad + C(\nabla \cdot w_v,(u'_1,\rho'_1); \bar{U})
+  + P(\nabla\cdot w_v,(\rho'_1,\theta'_1,\Pi'_1); \bar{U})
+  & = -R_u[w], \quad \forall w\in V_2, \\
+  T(q,(u'_1,\theta'_1); \bar{U}) & = 0, \quad \forall q\in V_\theta, \\
+  C(\phi,(u'_1,\rho'_1); \bar{U}) & = 0, \quad \forall \phi \in V_3, \\
+  P(\mu,(\rho'_1,\theta'_1,\Pi'_1); \bar{U}); \bar{U}) & = 0, \quad
+  \forall \mu \in V_3.
+\end{align}
+Going through the elimination steps again, we get
+\begin{equation}
+  -B(w_\phi, (\mathcal{L}_u\Pi',\mathcal{L}_\theta\Pi',\Pi'); \bar{U})
+  = R_u[w_\phi],
+  \quad \forall \phi \in V_3.
+\end{equation}
 
 \end{document}

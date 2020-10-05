@@ -1,16 +1,31 @@
 import firedrake as fd
 
+#get command arguments
+import argparse
+parser = argparse.ArgumentParser(description='Williamson 5 testcase for augmented Lagrangian solver.')
+parser.add_argument('--base_level', type=int, default=1, help='Base refinement level of icosahedral grid for MG solve. Default 1.')
+parser.add_argument('--ref_level', type=int, default=5, help='Refinement level of icosahedral grid. Default 5.')
+parser.add_argument('--dmax', type=float, default=15, help='Final time in days. Default 24.')
+parser.add_argument('--dumpt', type=float, default=1, help='Dump time in hours. Default 1.')
+parser.add_argument('--dt', type=float, default=1, help='Timestep in hours. Default 1.')
+parser.add_argument('--filename', type=str, default='w5')
+parser.add_argument('--coords_degree', type=int, default=1, help='Degree of polynomials for sphere mesh approximation.')
+parser.add_argument('--degree', type=int, default=1, help='Degree of finite element space (the DG space).')
+parser.add_argument('--mg', action='store_true', help='Use MG for the A block if present, otherwise use LU.')
+args = parser.parse_known_args()
+args = args[0]
+
 # some domain, parameters and FS setup
 R0 = 6371220.
 H = fd.Constant(5960.)
-base_level = 1
-ref_level = 5 - base_level
-deg = 1
+base_level = args.base_level
+nrefs = args.ref_level - base_level
+deg = args.coords_degree
 distribution_parameters = {"partition": True, "overlap_type": (fd.DistributedMeshOverlapType.VERTEX, 1)}
 basemesh = fd.IcosahedralSphereMesh(radius=R0,
                                     refinement_level=base_level, degree=deg,
                                     distribution_parameters = distribution_parameters)
-mh = fd.MeshHierarchy(basemesh, ref_level)
+mh = fd.MeshHierarchy(basemesh, nrefs)
 for mesh in mh:
     x = fd.SpatialCoordinate(mesh)
     mesh.init_cell_orientations(x)
@@ -25,9 +40,10 @@ def perp(u):
     return fd.cross(outward_normals, u)
 
 
-V1 = fd.FunctionSpace(mesh, "BDM", 2)
-V2 = fd.FunctionSpace(mesh, "DG", 1)
-V0 = fd.FunctionSpace(mesh, "CG", 3)
+degree = args.degree
+V1 = fd.FunctionSpace(mesh, "BDM", degree+1)
+V2 = fd.FunctionSpace(mesh, "DG", degree)
+V0 = fd.FunctionSpace(mesh, "CG", degree+2)
 W = fd.MixedFunctionSpace((V1, V2))
 
 u, eta = fd.TrialFunctions(W)
@@ -91,17 +107,10 @@ if vector_invariant:
                                           - uup('-')*hh('-'))*dS)
         )
 
-lu_parameters = {'mat_type': 'aij',
-                 'snes_monitor': None,
-                 'ksp_type': 'preonly',
-                 'pc_type': 'lu',
-                 'pc_factor_mat_solver_type': 'mumps'}
-
-
 sparameters = {
     "mat_type":"matfree",
     'snes_monitor': None,
-    "ksp_type": "fgmres",
+    "ksp_type": "fmgres",
     "ksp_gmres_modifiedgramschmidt": None,
     'ksp_monitor': None,
     "ksp_rtol": 1e-8,
@@ -109,59 +118,56 @@ sparameters = {
     "pc_fieldsplit_type": "schur",
     "pc_fieldsplit_schur_fact_type": "full",
     "pc_fieldsplit_off_diag_use_amat": True,
-    "fieldsplit_0_ksp_type": "preonly",
-    "fieldsplit_0_pc_type": "python",
-    "fieldsplit_0_pc_python_type": "firedrake.AssembledPC",
-    "fieldsplit_0_assembled_pc_type": "lu",
-    "fieldsplit_0_assembled_pc_factor_mat_solver_type": "mumps",
-    "fieldsplit_1_ksp_type": "gmres",
-#    "fieldsplit_1_ksp_converged_reason": None,
-    "fieldsplit_1_ksp_max_it": 3,
-    "fieldsplit_1_pc_type": "python",
-    "fieldsplit_1_pc_python_type": "firedrake.MassInvPC",
-    "fieldsplit_1_Mp_pc_type": "bjacobi",
-    "fieldsplit_1_Mp_sub_pc_type": "ilu"
 }
 
-mgparameters = {
-    "mat_type":"matfree",
-    'snes_monitor': None,
-    "ksp_type": "fgmres",
-    'ksp_monitor': None,
-    "ksp_rtol": 1e-8,
-    "ksp_gmres_modifiedgramschmidt": None,
-    "pc_type": "fieldsplit",
-    "pc_fieldsplit_type": "schur",
-    "pc_fieldsplit_schur_fact_type": "full",
-    "pc_fieldsplit_off_diag_use_amat": True,
-    "fieldsplit_0_ksp_type": "preonly",
-    "fieldsplit_0_pc_type": "mg",
-    "fieldsplit_0_mg_coarse_ksp_type": "preonly",
-    "fieldsplit_0_mg_coarse_pc_type": "python",
-    "fieldsplit_0_mg_coarse_pc_python_type": "firedrake.AssembledPC",
-    "fieldsplit_0_mg_coarse_assembled_pc_type": "lu",
-    "fieldsplit_0_mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
-    "fieldsplit_0_mg_levels_ksp_type": "gmres",
-    "fieldsplit_0_mg_levels_ksp_max_it": 3,
-    "fieldsplit_0_mg_levels_pc_type": "python",
-    "fieldsplit_0_mg_levels_pc_python_type": "firedrake.PatchPC",
-    "fieldsplit_0_mg_levels_patch_pc_patch_save_operators": True,
-    "fieldsplit_0_mg_levels_patch_pc_patch_partition_of_unity": False,
-    "fieldsplit_0_mg_levels_patch_pc_patch_sub_mat_type": "seqaij",
-    "fieldsplit_0_mg_levels_patch_pc_patch_construct_type": "star",
-    "fieldsplit_0_mg_levels_patch_pc_patch_multiplicative": False,
-    "fieldsplit_0_mg_levels_patch_pc_patch_symmetrise_sweep": False,
-    "fieldsplit_0_mg_levels_patch_pc_patch_construct_dim": 0,
-    "fieldsplit_0_mg_levels_patch_sub_ksp_type": "preonly",
-    "fieldsplit_0_mg_levels_patch_sub_pc_type": "lu",
-    "fieldsplit_1_ksp_type": "preonly",
-    "fieldsplit_1_pc_type": "python",
-    "fieldsplit_1_pc_python_type": "firedrake.MassInvPC",
-    "fieldsplit_1_Mp_pc_type": "bjacobi",
-    "fieldsplit_1_Mp_sub_pc_type": "ilu"
+bottomright = {
+    "ksp_type": "gmres",
+    "ksp_max_it": 3,
+    "pc_type": "python",
+    "pc_python_type": "firedrake.MassInvPC",
+    "Mp_pc_type": "bjacobi",
+    "Mp_sub_pc_type": "ilu"
 }
 
-hours = 0.05
+sparameters["fieldsplit_1"] = bottomright
+
+topleft_LU = {
+    "ksp_type": "preonly",
+    "pc_type": "python",
+    "pc_python_type": "firedrake.AssembledPC",
+    "assembled_pc_type": "lu",
+    "assembled_pc_factor_mat_solver_type": "mumps"
+}
+
+topleft_MG = {
+    "ksp_type": "preonly",
+    "pc_type": "mg",
+    "mg_coarse_ksp_type": "preonly",
+    "mg_coarse_pc_type": "python",
+    "mg_coarse_pc_python_type": "firedrake.AssembledPC",
+    "mg_coarse_assembled_pc_type": "lu",
+    "mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
+    "mg_levels_ksp_type": "gmres",
+    "mg_levels_ksp_max_it": 3,
+    "mg_levels_pc_type": "python",
+    "mg_levels_pc_python_type": "firedrake.PatchPC",
+    "mg_levels_patch_pc_patch_save_operators": True,
+    "mg_levels_patch_pc_patch_partition_of_unity": False,
+    "mg_levels_patch_pc_patch_sub_mat_type": "seqaij",
+    "mg_levels_patch_pc_patch_construct_type": "star",
+    "mg_levels_patch_pc_patch_multiplicative": False,
+    "mg_levels_patch_pc_patch_symmetrise_sweep": False,
+    "mg_levels_patch_pc_patch_construct_dim": 0,
+    "mg_levels_patch_sub_ksp_type": "preonly",
+    "mg_levels_patch_sub_pc_type": "lu",
+}
+
+if args.mg:
+    sparameters["fieldsplit_0"] = topleft_MG
+else:
+    sparameters["fieldsplit_0"] = topleft_LU
+
+hours = 1
 dt = 60*60*hours
 dT.assign(dt)
 t = 0.
@@ -171,10 +177,10 @@ ctx = {"mu": g*dt/gamma/2}
 nsolver = fd.NonlinearVariationalSolver(nprob,
                                         solver_parameters=sparameters,
                                         appctx=ctx)
-dmax = 15
+dmax = args.dmax
 hmax = 24*dmax
 tmax = 60.*60.*hmax
-hdump = 1
+hdump = args.dumpt
 dumpt = hdump*60.*60.
 tdump = 0.
 
@@ -207,7 +213,7 @@ p = fd.TestFunction(V0)
 qn = fd.Function(V0, name="Relative Vorticity")
 veqn = q*p*dx + fd.inner(perp(fd.grad(p)), un)*dx
 vprob = fd.LinearVariationalProblem(fd.lhs(veqn), fd.rhs(veqn), qn)
-qparams = {'ksp_converged_reason': None}
+qparams = {'ksp_type':'cg'}
 qsolver = fd.LinearVariationalSolver(vprob, name="qsolver",
                                      solver_parameters=qparams)
 
