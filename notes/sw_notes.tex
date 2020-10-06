@@ -213,6 +213,41 @@ Further, the operator $\phi\to w_\phi$ is like a negative gradient.
 This means that the operator with the most derivatives is the
 mass operator (fourth term).
 
+Some results. Williamson 5. LU on top-left block.
+\begin{tabular}{|c|c|c|c|c|}
+  \hline
+  mesh & $\Delta t$ & $2\gamma/g/\Delta t$ & ksp Schur its & iterations \\
+  5 & 1 & $10^5$ & 3 & 7 \\
+  5 & 1 & $10^4$ & 3 & 4 \\
+  5 & 1 & $10^3$ & 3 & 14 \\
+  6 & 1 & $10^4$ & 3 & 4 \\
+  6 & 1 & $10^5$ & 3 & 7 \\
+  6 & 1 & $10^3$ & 3 & 15 \\
+  4 & 1 & $10^4$ & 3 & 4 \\
+  4 & 1 & $10^3$ & 3 & 14 \\
+  4 & 1 & $10^5$ & 3 & 7 \\
+  \hline
+\end{tabular}
+
+More results. Williamson 5. MG on top-left block. Star iterations with
+3 GMRES on levels.\\
+\begin{tabular}{|c|c|c|c|c|}
+  \hline
+  mesh & $\Delta t$ & $2\gamma/g/\Delta t$ & ksp Schur its & iterations \\
+  4 & 1 & $10^4$ & 3 & 4 \\
+  5 & 1 & $10^4$ & 3 & 4 \\
+  6 & 1 & $10^4$ & 3 & 5 \\
+  7 & 1 & $10^4$ & 3 & 6-7 \\
+  \hline
+  4 & 2 & $10^4$ & 3 & 4 \\
+  5 & 1 & $10^4$ & 3 & 4 \\
+  6 & 0.5 & $10^4$ & 3 & 5 \\
+  7 & 0.25 & $10^4$ & 3 & 6-7 \\
+  \hline
+\end{tabular}
+
+
+
 \section{Rotating compressible Euler equations}
 
 We can write the Newton iteration for the implicit midpoint rule for

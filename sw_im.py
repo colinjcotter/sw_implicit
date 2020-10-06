@@ -9,6 +9,7 @@ parser.add_argument('--dmax', type=float, default=15, help='Final time in days. 
 parser.add_argument('--dumpt', type=float, default=1, help='Dump time in hours. Default 1.')
 parser.add_argument('--dt', type=float, default=1, help='Timestep in hours. Default 1.')
 parser.add_argument('--filename', type=str, default='w5')
+parser.add_argument('--kspinner', type=int, default=3, help='Number of ksp inner iterations')
 parser.add_argument('--coords_degree', type=int, default=1, help='Degree of polynomials for sphere mesh approximation.')
 parser.add_argument('--degree', type=int, default=1, help='Degree of finite element space (the DG space).')
 parser.add_argument('--mg', action='store_true', help='Use MG for the A block if present, otherwise use LU.')
@@ -110,7 +111,7 @@ if vector_invariant:
 sparameters = {
     "mat_type":"matfree",
     'snes_monitor': None,
-    "ksp_type": "fmgres",
+    "ksp_type": "fgmres",
     "ksp_gmres_modifiedgramschmidt": None,
     'ksp_monitor': None,
     "ksp_rtol": 1e-8,
