@@ -16,8 +16,12 @@ parser.add_argument('--degree', type=int, default=1, help='Degree of finite elem
 parser.add_argument('--kspschur', type=int, default=3, help='Number of KSP iterations on the Schur complement.')
 parser.add_argument('--kspmg', type=int, default=3, help='Number of KSP iterations in the MG levels.')
 parser.add_argument('--mg', action='store_true', help='Use MG for the A block if present, otherwise use LU.')
+parser.add_argument('--show_args', action='store_true', help='Output all the arguments.')
 args = parser.parse_known_args()
 args = args[0]
+
+if args.show_args:
+    print(args)
 
 # some domain, parameters and FS setup
 R0 = 6371220.
@@ -145,6 +149,7 @@ topleft_LU = {
 
 topleft_MG = {
     "ksp_type": "preonly",
+    "ksp_max_it": 3,
     "pc_type": "mg",
     "mg_coarse_ksp_type": "preonly",
     "mg_coarse_pc_type": "python",
