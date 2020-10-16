@@ -37,12 +37,13 @@ if args.tlblock == "mg":
     mh = fd.MeshHierarchy(basemesh, nrefs)
     for mesh in mh:
         x = fd.SpatialCoordinate(mesh)
-    mesh.init_cell_orientations(x)
+        mesh.init_cell_orientations(x)
     mesh = mh[-1]
 else:
     mesh = fd.IcosahedralSphereMesh(radius=R0,
                                     refinement_level=args.ref_level, degree=deg,
                                     distribution_parameters = distribution_parameters)
+    mesh.init_cell_orientations(x)
 R0 = fd.Constant(R0)
 cx, cy, cz = fd.SpatialCoordinate(mesh)
 
