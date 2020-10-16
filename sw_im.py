@@ -30,14 +30,19 @@ base_level = args.base_level
 nrefs = args.ref_level - base_level
 deg = args.coords_degree
 distribution_parameters = {"partition": True, "overlap_type": (fd.DistributedMeshOverlapType.VERTEX, 1)}
-basemesh = fd.IcosahedralSphereMesh(radius=R0,
-                                    refinement_level=base_level, degree=deg,
-                                    distribution_parameters = distribution_parameters)
-mh = fd.MeshHierarchy(basemesh, nrefs)
-for mesh in mh:
-    x = fd.SpatialCoordinate(mesh)
+if args.tlblock == "mg":
+    basemesh = fd.IcosahedralSphereMesh(radius=R0,
+                                        refinement_level=base_level, degree=deg,
+                                        distribution_parameters = distribution_parameters)
+    mh = fd.MeshHierarchy(basemesh, nrefs)
+    for mesh in mh:
+        x = fd.SpatialCoordinate(mesh)
     mesh.init_cell_orientations(x)
-mesh = mh[-1]
+    mesh = mh[-1]
+else:
+    mesh = fd.IcosahedralSphereMesh(radius=R0,
+                                    refinement_level=args.ref_level, degree=deg,
+                                    distribution_parameters = distribution_parameters)
 R0 = fd.Constant(R0)
 cx, cy, cz = fd.SpatialCoordinate(mesh)
 
