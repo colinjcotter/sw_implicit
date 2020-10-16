@@ -43,6 +43,7 @@ else:
     mesh = fd.IcosahedralSphereMesh(radius=R0,
                                     refinement_level=args.ref_level, degree=deg,
                                     distribution_parameters = distribution_parameters)
+    x = fd.SpatialCoordinate(mesh)
     mesh.init_cell_orientations(x)
 R0 = fd.Constant(R0)
 cx, cy, cz = fd.SpatialCoordinate(mesh)
