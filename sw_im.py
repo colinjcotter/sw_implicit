@@ -176,8 +176,7 @@ if args.mg:
 else:
     sparameters["fieldsplit_0"] = topleft_LU
 
-hours = 1
-dt = 60*60*hours
+dt = 60*60*args.dt
 dT.assign(dt)
 t = 0.
 
