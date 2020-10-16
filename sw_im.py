@@ -15,7 +15,7 @@ parser.add_argument('--coords_degree', type=int, default=1, help='Degree of poly
 parser.add_argument('--degree', type=int, default=1, help='Degree of finite element space (the DG space).')
 parser.add_argument('--kspschur', type=int, default=3, help='Number of KSP iterations on the Schur complement.')
 parser.add_argument('--kspmg', type=int, default=3, help='Number of KSP iterations in the MG levels.')
-parser.add_argument('--mg', action='store_true', help='Use MG for the A block if present, otherwise use LU.')
+parser.add_argument('--tlblock', type=str, default='mg', help='Solver for the velocity-velocity block. mg==Multigrid with patchPC, lu==direct solver with MUMPS, patch==just do a patch smoother.')
 parser.add_argument('--show_args', action='store_true', help='Output all the arguments.')
 args = parser.parse_known_args()
 args = args[0]
@@ -171,9 +171,29 @@ topleft_MG = {
     "mg_levels_patch_sub_pc_type": "lu",
 }
 
-if args.mg:
+topleft_smoother = {
+    "ksp_type": "gmres",
+    "ksp_max_it": 50,
+    "ksp_monitor": None,
+    "pc_type": "python",
+    "pc_python_type": "firedrake.PatchPC",
+    "patch_pc_patch_save_operators": True,
+    "patch_pc_patch_partition_of_unity": False,
+    "patch_pc_patch_sub_mat_type": "seqaij",
+    "patch_pc_patch_construct_type": "star",
+    "patch_pc_patch_multiplicative": False,
+    "patch_pc_patch_symmetrise_sweep": False,
+    "patch_pc_patch_construct_dim": 0,
+    "patch_sub_ksp_type": "preonly",
+    "patch_sub_pc_type": "lu",
+}
+
+if args.tlblock == "mg":
     sparameters["fieldsplit_0"] = topleft_MG
+elif args.tlblock == "patch":
+    sparameters["fieldsplit_0"] = topleft_smoother
 else:
+    assert(args.tlblock=="LU")
     sparameters["fieldsplit_0"] = topleft_LU
 
 dt = 60*60*args.dt
