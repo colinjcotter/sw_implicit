@@ -16,20 +16,21 @@ U = fd.Constant(20)
 
 # build volume mesh
 H = 1.0e4  # Height position of the model top
-mesh = ExtrudedMesh(m, layers=nlayers, layer_height=H/nlayers)
+mesh = fd.ExtrudedMesh(m, layers=nlayers, layer_height=H/nlayers)
+H = fd.Constant(H)
 
-S1 = FiniteElement(family, interval, horizontal_degree+1)
-S2 = FiniteElement("DG", interval, horizontal_degree)
+S1 = fd.FiniteElement(family, fd.interval, horizontal_degree+1)
+S2 = fd.FiniteElement("DG", fd.interval, horizontal_degree)
 
 # vertical base spaces
-T0 = FiniteElement("CG", interval, vertical_degree+1)
-T1 = FiniteElement("DG", interval, vertical_degree)
+T0 = fd.FiniteElement("CG", fd.interval, vertical_degree+1)
+T1 = fd.FiniteElement("DG", fd.interval, vertical_degree)
 
 # build spaces V2, V3, Vt
-V2h_elt = HDiv(TensorProductElement(S1, T1))
-V2t_elt = TensorProductElement(S2, T0)
-V3_elt = TensorProductElement(S2, T1)
-V2v_elt = HDiv(V2t_elt)
+V2h_elt = fd.HDiv(fd.TensorProductElement(S1, T1))
+V2t_elt = fd.TensorProductElement(S2, T0)
+V3_elt = fd.TensorProductElement(S2, T1)
+V2v_elt = fd.HDiv(V2t_elt)
 V2_elt = V2h_elt + V2v_elt
 
 V1 = fd.FunctionSpace("HDiv", mesh, V2_elt)
