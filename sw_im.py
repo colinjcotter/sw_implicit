@@ -29,7 +29,8 @@ H = fd.Constant(5960.)
 base_level = args.base_level
 nrefs = args.ref_level - base_level
 deg = args.coords_degree
-distribution_parameters = {"partition": True, "overlap_type": (fd.DistributedMeshOverlapType.VERTEX, 1)}
+distribution_parameters = {"partition": True, "overlap_type": (fd.DistributedMeshOverlapType.VERTEX, 2)}
+#distribution_parameters = {"partition": True, "overlap_type": (fd.DistributedMeshOverlapType.FACET, 2)}
 if args.tlblock == "mg":
     basemesh = fd.IcosahedralSphereMesh(radius=R0,
                                         refinement_level=base_level, degree=deg,
@@ -56,7 +57,7 @@ def perp(u):
 
 
 degree = args.degree
-V1 = fd.FunctionSpace(mesh, "BDM", degree+1)
+V1 = fd.FunctionSpace(mesh, "BDFM", degree+1)
 V2 = fd.FunctionSpace(mesh, "DG", degree)
 V0 = fd.FunctionSpace(mesh, "CG", degree+2)
 W = fd.MixedFunctionSpace((V1, V2))
@@ -200,7 +201,7 @@ if args.tlblock == "mg":
 elif args.tlblock == "patch":
     sparameters["fieldsplit_0"] = topleft_smoother
 else:
-    assert(args.tlblock=="LU")
+    assert(args.tlblock=="lu")
     sparameters["fieldsplit_0"] = topleft_LU
 
 dt = 60*60*args.dt

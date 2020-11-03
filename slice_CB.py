@@ -19,6 +19,9 @@ H = 1.0e4  # Height position of the model top
 mesh = fd.ExtrudedMesh(m, layers=nlayers, layer_height=H/nlayers)
 H = fd.Constant(H)
 
+family = "CG"
+horizontal_degree = 1
+vertical_degree = 1
 S1 = fd.FiniteElement(family, fd.interval, horizontal_degree+1)
 S2 = fd.FiniteElement("DG", fd.interval, horizontal_degree)
 
