@@ -10,7 +10,7 @@ m = fd.PeriodicIntervalMesh(columns, L)
 cs = fd.Constant(100.)
 f = fd.Constant(1.0)
 N = fd.Constant(1.0e-2)
-U = fd.Constant(0.)
+U = fd.Constant(20.)
 
 # build volume mesh
 H = 1.0e4  # Height position of the model top
