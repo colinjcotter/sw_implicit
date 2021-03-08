@@ -1,8 +1,10 @@
+from petsc4py import PETSc
+PETSc.Sys.popErrorHandler()
 import firedrake as fd
 
 dT = fd.Constant(0)
 
-nlayers = 10  # horizontal layers
+nlayers = 80  # horizontal layers
 columns = 150  # number of columns
 L = 3.0e5
 m = fd.PeriodicIntervalMesh(columns, L)
@@ -96,12 +98,77 @@ eqn = u_eqn(w) + theta_eqn(q) + pi_eqn(phi) + gamma*pi_eqn(fd.div(w))
 bcs = [fd.DirichletBC(W.sub(0), 0., "top"),
        fd.DirichletBC(W.sub(0), 0., "bottom")]
 nprob = fd.NonlinearVariationalProblem(eqn, Unp1, bcs=bcs)
-sparams = {'snes_monitor':None,
+luparams = {'snes_monitor':None,
     'mat_type':'aij',
     'ksp_type':'preonly',
     'pc_type':'lu',
     'pc_factor_mat_solver_type':'mumps'}
-nsolver = fd.NonlinearVariationalSolver(nprob, solver_parameters=sparams)
+
+sparameters = {
+    "mat_type":"matfree",
+    'snes_monitor': None,
+    "ksp_type": "fgmres",
+    "ksp_gmres_modifiedgramschmidt": None,
+    'ksp_monitor': None,
+    "ksp_rtol": 1e-8,
+    "pc_type": "fieldsplit",
+    "pc_fieldsplit_type": "schur",
+    "pc_fieldsplit_0_fields": "0,1",
+    "pc_fieldsplit_1_fields": "2",
+    "pc_fieldsplit_schur_fact_type": "full",
+    "pc_fieldsplit_off_diag_use_amat": True,
+}
+
+bottomright = {
+    "ksp_type": "gmres",
+    "ksp_max_it": 3,
+    "pc_type": "python",
+    "pc_python_type": "firedrake.MassInvPC",
+    "Mp_pc_type": "bjacobi",
+    "Mp_sub_pc_type": "ilu"
+}
+
+sparameters["fieldsplit_1"] = bottomright
+
+topleft_LU = {
+    "ksp_type": "preonly",
+    "pc_type": "python",
+    "pc_python_type": "firedrake.AssembledPC",
+    "assembled_pc_type": "lu",
+    "assembled_pc_factor_mat_solver_type": "mumps"
+}
+
+topleft_LS = {'pc_type': 'python',
+              'pc_python_type': 'firedrake.ASMLinesmoothPC',
+              'pc_linesmooth_codims': '1'}
+
+topleft_MG = {
+    "ksp_type": "preonly",
+    "ksp_max_it": 3,
+    "pc_type": "mg",
+    "mg_coarse_ksp_type": "preonly",
+    "mg_coarse_pc_type": "python",
+    "mg_coarse_pc_python_type": "firedrake.AssembledPC",
+    "mg_coarse_assembled_pc_type": "lu",
+    "mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
+    "mg_levels_ksp_type": "gmres",
+    "mg_levels_ksp_max_it": 3,
+    "mg_levels_pc_type": "python",
+    "mg_levels_pc_python_type": "firedrake.PatchPC",
+    "mg_levels_patch_pc_patch_save_operators": True,
+    "mg_levels_patch_pc_patch_partition_of_unity": False,
+    "mg_levels_patch_pc_patch_sub_mat_type": "seqaij",
+    "mg_levels_patch_pc_patch_construct_type": "star",
+    "mg_levels_patch_pc_patch_multiplicative": False,
+    "mg_levels_patch_pc_patch_symmetrise_sweep": False,
+    "mg_levels_patch_pc_patch_construct_dim": 0,
+    "mg_levels_patch_sub_ksp_type": "preonly",
+    "mg_levels_patch_sub_pc_type": "lu",
+}
+sparameters["fieldsplit_0"] = topleft_LU
+
+nsolver = fd.NonlinearVariationalSolver(nprob,
+                                        solver_parameters=sparameters)
 
 name = "gw_imp"
 file_gw = fd.File(name+'.pvd')
@@ -109,14 +176,14 @@ un, Pin, bn = Un.split()
 file_gw.write(un, Pin, bn)
 Unp1.assign(Un)
 
-dt = 6.
-dumpt = 60.
+dt = 600.
+dumpt = 600.
 tdump = 0.
 dT.assign(dt)
 tmax = 3600.
 print('tmax', tmax, 'dt', dt)
 t = 0.
-while t < tmax + 0.5*dt:
+while t < tmax - 0.5*dt:
     print(t)
     t += dt
     tdump += dt
