@@ -5,9 +5,9 @@ import argparse
 parser = argparse.ArgumentParser(description='Williamson 5 testcase for augmented Lagrangian solver.')
 parser.add_argument('--ref_level', type=int, default=5, help='Refinement level of icosahedral grid. Default 5.')
 parser.add_argument('--dmax', type=float, default=15, help='Final time in days. Default 24.')
-parser.add_argument('--dumpt', type=float, default=1, help='Dump time in hours. Default 1.')
+parser.add_argument('--dumpt', type=float, default=24, help='Dump time in hours. Default 1.')
 parser.add_argument('--dt', type=float, default=1, help='Timestep in hours. Default 1.')
-parser.add_argument('--filename', type=str, default='w5')
+parser.add_argument('--filename', type=str, default='w5semi')
 parser.add_argument('--coords_degree', type=int, default=1, help='Degree of polynomials for sphere mesh approximation.')
 parser.add_argument('--degree', type=int, default=1, help='Degree of finite element space (the DG space).')
 parser.add_argument('--show_args', action='store_true', help='Output all the arguments.')
@@ -18,6 +18,8 @@ args = args[0]
 if args.show_args:
     print(args)
 
+name = args.filename
+    
 # some domain, parameters and FS setup
 R0 = 6371220.
 H = fd.Constant(5960.)
@@ -96,11 +98,12 @@ uup = 0.5 * (fd.dot(uh, n) + abs(fd.dot(uh, n)))
 Heqn = ((h - hn)*phi*dx - dT*fd.inner(fd.grad(phi), uh*hh)*dx
         + dT*fd.jump(phi)*(uup('+')*hh('+')-uup('-')*hh('-'))*dS)
 Hproblem = fd.LinearVariationalProblem(fd.lhs(Heqn), fd.rhs(Heqn), hps)
-lu_params = {'ksp_type': 'preonly',
-             'pc_type': 'lu',
-             'pc_factor_mat_solver_type': 'mumps'}
+ilu_params = {'ksp_type': 'gmres',
+              'pc_type': 'bjacobi',
+              'sub_pc_type':'ilu',
+              'ksp_converged_reason':None}
 Hsolver = fd.LinearVariationalSolver(Hproblem,
-                                     solver_parameters=lu_params,
+                                     solver_parameters=ilu_params,
                                      options_prefix="H-advection")
 
 ##############################################################################
@@ -126,7 +129,7 @@ Ueqn = (fd.inner(u - un, v)*dx + dT*fd.inner(perp(uh)*f, v)*dx
         - dT*fd.div(v)*(g*(hh + b) + K)*dx)
 Uproblem = fd.LinearVariationalProblem(fd.lhs(Ueqn), fd.rhs(Ueqn), ups)
 Usolver = fd.LinearVariationalSolver(Uproblem,
-                                  solver_parameters=lu_params,
+                                  solver_parameters=ilu_params,
                                   options_prefix="U-advection")
 
 ##############################################################################
@@ -143,10 +146,15 @@ HUlhs = (fd.inner(w, du + alpha*dT*f*perp(du))*dx
          + phi*(dh + alpha*dT*H*fd.div(du))*dx)
 HUrhs = -fd.inner(w, up - ups)*dx - phi*(hp - hps)*dx
 HUproblem = fd.LinearVariationalProblem(HUlhs, HUrhs, HU)
-params = {'ksp_type': 'preonly',
-          'mat_type': 'aij',
-          'pc_type': 'lu',
-          'pc_factor_mat_solver_type': 'mumps'}
+params = {'mat_type': 'matfree',
+          'ksp_type': 'preonly',
+          'pc_type': 'python',
+          'pc_python_type': 'firedrake.HybridizationPC',
+          'hybridization': {'ksp_type': 'cg',
+                            'pc_type': 'gamg',
+                            'ksp_converged_reason': None
+          }}
+
 HUsolver = fd.LinearVariationalSolver(HUproblem,
                                       solver_parameters=params,
                                       options_prefix="impl-solve")

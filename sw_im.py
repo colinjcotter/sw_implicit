@@ -9,7 +9,7 @@ parser.add_argument('--dmax', type=float, default=15, help='Final time in days. 
 parser.add_argument('--dumpt', type=float, default=1, help='Dump time in hours. Default 1.')
 parser.add_argument('--gamma', type=float, default=1.0e5, help='Augmented Lagrangian scaling parameter. Default 10000.')
 parser.add_argument('--dt', type=float, default=1, help='Timestep in hours. Default 1.')
-parser.add_argument('--filename', type=str, default='w5')
+parser.add_argument('--filename', type=str, default='w5im')
 parser.add_argument('--kspinner', type=int, default=3, help='Number of ksp inner iterations')
 parser.add_argument('--coords_degree', type=int, default=1, help='Degree of polynomials for sphere mesh approximation.')
 parser.add_argument('--degree', type=int, default=1, help='Degree of finite element space (the DG space).')
@@ -28,6 +28,7 @@ R0 = 6371220.
 H = fd.Constant(5960.)
 base_level = args.base_level
 nrefs = args.ref_level - base_level
+name = args.filename
 deg = args.coords_degree
 distribution_parameters = {"partition": True, "overlap_type": (fd.DistributedMeshOverlapType.VERTEX, 2)}
 #distribution_parameters = {"partition": True, "overlap_type": (fd.DistributedMeshOverlapType.FACET, 2)}
@@ -253,7 +254,6 @@ qparams = {'ksp_type':'cg'}
 qsolver = fd.LinearVariationalSolver(vprob, name="qsolver",
                                      solver_parameters=qparams)
 
-name = "sw_imp"
 file_sw = fd.File(name+'.pvd')
 etan.assign(h0 - H + b)
 un.assign(u0)
