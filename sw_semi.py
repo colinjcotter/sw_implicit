@@ -176,7 +176,6 @@ qparams = {'ksp_type':'cg'}
 qsolver = fd.LinearVariationalSolver(vprob,
                                      solver_parameters=qparams)
 
-name = "sw_imp"
 file_sw = fd.File(name+'.pvd')
 etan.assign(hn - H + b)
 qsolver.solve()
