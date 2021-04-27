@@ -113,8 +113,8 @@ sparameters = {
     "ksp_rtol": 1e-8,
     "pc_type": "fieldsplit",
     "pc_fieldsplit_type": "schur",
-    "pc_fieldsplit_0_fields": "0,1",
-    "pc_fieldsplit_1_fields": "2",
+    "pc_fieldsplit_0_fields": "0,2",
+    "pc_fieldsplit_1_fields": "1",
     "pc_fieldsplit_schur_fact_type": "full",
     "pc_fieldsplit_off_diag_use_amat": True,
 }

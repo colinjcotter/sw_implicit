@@ -1,4 +1,6 @@
 import firedrake as fd
+from petsc4py import PETSc
+PETSc.Sys.popErrorHandler()
 
 #get command arguments
 import argparse
@@ -9,7 +11,7 @@ parser.add_argument('--dmax', type=float, default=15, help='Final time in days. 
 parser.add_argument('--dumpt', type=float, default=1, help='Dump time in hours. Default 1.')
 parser.add_argument('--gamma', type=float, default=1.0e5, help='Augmented Lagrangian scaling parameter. Default 10000.')
 parser.add_argument('--dt', type=float, default=1, help='Timestep in hours. Default 1.')
-parser.add_argument('--filename', type=str, default='w5im')
+parser.add_argument('--filename', type=str, default='w5semi')
 parser.add_argument('--kspinner', type=int, default=3, help='Number of ksp inner iterations')
 parser.add_argument('--coords_degree', type=int, default=1, help='Degree of polynomials for sphere mesh approximation.')
 parser.add_argument('--degree', type=int, default=1, help='Degree of finite element space (the DG space).')
@@ -124,6 +126,19 @@ if vector_invariant:
                                           - uup('-')*hh('-'))*dS)
         )
 
+# U_t + N(U) = 0
+# IMPLICIT MIDPOINT
+# U^{n+1} - U^n + dt*N( (U^{n+1}+U^n)/2 ) = 0.
+
+# TRAPEZOIDAL RULE
+# U^{n+1} - U^n + dt*( N(U^{n+1}) + N(U^n) )/2 = 0.
+    
+# Newton's method
+# f(x) = 0, f:R^M -> R^M
+# [Df(x)]_{i,j} = df_i/dx_j
+# x^0, x^1, ...
+# Df(x^k).xp = -f(x^k)
+# x^{k+1} = x^k + xp.
 sparameters = {
     "mat_type":"matfree",
     'snes_monitor': None,
@@ -180,9 +195,28 @@ topleft_MG = {
     "mg_levels_patch_sub_pc_type": "lu",
 }
 
+topleft_MGs = {
+    "ksp_type": "preonly",
+    "ksp_max_it": 3,
+    "pc_type": "mg",
+    "mg_coarse_ksp_type": "preonly",
+    "mg_coarse_pc_type": "python",
+    "mg_coarse_pc_python_type": "firedrake.AssembledPC",
+    "mg_coarse_assembled_pc_type": "lu",
+    "mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
+    "mg_levels_ksp_type": "gmres",
+    "mg_levels_ksp_max_it": args.kspmg,
+    "mg_levels_pc_type": "python",
+    "mg_levels_pc_python_type": "firedrake.AssembledPC",
+    "mg_levels_assembled_pc_type": "python",
+    "mg_levels_assembled_pc_python_type": "firedrake.ASMStarPC",
+    "mg_levels_assembled_pc_star_backend": "tinyasm",
+    "mg_levels_assmbled_pc_star_construct_dim": 0
+}
+
 topleft_smoother = {
     "ksp_type": "gmres",
-    "ksp_max_it": 50,
+    "ksp_max_it": 3,
     "ksp_monitor": None,
     "pc_type": "python",
     "pc_python_type": "firedrake.PatchPC",
@@ -198,7 +232,7 @@ topleft_smoother = {
 }
 
 if args.tlblock == "mg":
-    sparameters["fieldsplit_0"] = topleft_MG
+    sparameters["fieldsplit_0"] = topleft_MGs
 elif args.tlblock == "patch":
     sparameters["fieldsplit_0"] = topleft_smoother
 else:
@@ -251,7 +285,7 @@ qn = fd.Function(V0, name="Relative Vorticity")
 veqn = q*p*dx + fd.inner(perp(fd.grad(p)), un)*dx
 vprob = fd.LinearVariationalProblem(fd.lhs(veqn), fd.rhs(veqn), qn)
 qparams = {'ksp_type':'cg'}
-qsolver = fd.LinearVariationalSolver(vprob, name="qsolver",
+qsolver = fd.LinearVariationalSolver(vprob,
                                      solver_parameters=qparams)
 
 file_sw = fd.File(name+'.pvd')
