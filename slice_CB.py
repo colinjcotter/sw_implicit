@@ -154,18 +154,11 @@ topleft_MG = {
     "mg_levels_ksp_type": "gmres",
     "mg_levels_ksp_max_it": 3,
     "mg_levels_pc_type": "python",
-    "mg_levels_pc_python_type": "firedrake.PatchPC",
-    "mg_levels_patch_pc_patch_save_operators": True,
-    "mg_levels_patch_pc_patch_partition_of_unity": False,
-    "mg_levels_patch_pc_patch_sub_mat_type": "seqaij",
-    "mg_levels_patch_pc_patch_construct_type": "star",
-    "mg_levels_patch_pc_patch_multiplicative": False,
-    "mg_levels_patch_pc_patch_symmetrise_sweep": False,
-    "mg_levels_patch_pc_patch_construct_dim": 0,
-    "mg_levels_patch_sub_ksp_type": "preonly",
-    "mg_levels_patch_sub_pc_type": "lu",
+    "mg_levels_pc_python_type": "firedrake.ASMStarPC",
+    "mg_levels_pc_star_sub_pc_type": "lu",
+    "mg_levels_pc_star_sub_sub_pc_factor_mat_solver_type": "mumps"
 }
-sparameters["fieldsplit_0"] = topleft_LU
+sparameters["fieldsplit_0"] = topleft_MG
 
 nsolver = fd.NonlinearVariationalSolver(nprob,
                                         solver_parameters=sparameters)
