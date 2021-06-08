@@ -4,8 +4,8 @@ import firedrake as fd
 import argparse
 parser = argparse.ArgumentParser(description='Williamson 5 testcase for augmented Lagrangian solver.')
 parser.add_argument('--ref_level', type=int, default=5, help='Refinement level of icosahedral grid. Default 5.')
-parser.add_argument('--dmax', type=float, default=15, help='Final time in days. Default 24.')
-parser.add_argument('--dumpt', type=float, default=24, help='Dump time in hours. Default 1.')
+parser.add_argument('--dmax', type=float, default=15, help='Final time in days. Default 15.')
+parser.add_argument('--dumpt', type=float, default=24, help='Dump time in hours. Default 24.')
 parser.add_argument('--dt', type=float, default=1, help='Timestep in hours. Default 1.')
 parser.add_argument('--filename', type=str, default='w5semi')
 parser.add_argument('--coords_degree', type=int, default=1, help='Degree of polynomials for sphere mesh approximation.')
