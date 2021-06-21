@@ -161,7 +161,6 @@ topleft_MG = {
 
 topleft_line = {
     "ksp_type": "preonly",
-    "ksp_max_it": 3,
     "pc_type": "python",
     "pc_python_type": "firedrake.AssembledPC",
     "assembled_pc_type": "python",
