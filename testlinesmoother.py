@@ -5,8 +5,10 @@ vertical_degree = 0
 
 L = 3.0e5
 H = 1.0e4
-nlayers = 50
-mesh = ExtrudedMesh(PeriodicIntervalMesh(100, L), nlayers, H / nlayers)
+nlayers = 5
+m = PeriodicIntervalMesh(nlayers, L)
+m = IntervalMesh(5, L)
+mesh = ExtrudedMesh(m, nlayers, H / nlayers)
 S1family = "CG"
 
 S1 = FiniteElement(S1family, mesh._base_mesh.ufl_cell(), horizontal_degree+1)
@@ -61,7 +63,6 @@ sparameters = {
     "mat_type": "matfree",
     'snes_monitor': None,
     "ksp_type": "gmres",
-    "ksp_view": None,
     "ksp_monitor": None,
     'pc_type': 'python',
     "pc_python_type": "firedrake.AssembledPC",
@@ -70,8 +71,18 @@ sparameters = {
     'assembled_pc_python_type': 'firedrake.ASMStarPC',
     'assembled_pc_star_dims': '0',
     "assembled_pc_star_sub_pc_type": "lu",
-    'assembled_pc_star_sub_sub_pc_factor_mat_solver_type' : 'mumps',
+    'assembled_pc_star_sub_pc_factor_mat_solver_type' : 'mumps',
+}
+
+lu_parameters = {
+    "mat_type":'aij',
+    "pc_type":'lu',
+    "pc_factor_mat_solver_type":'mumps'
 }
 
 LS_solver = LinearVariationalSolver(problem, solver_parameters=sparameters)
 LS_solver.solve()
+M = assemble(a, mat_type='aij')
+M = M.petscmat[:,:]
+import numpy.linalg as linalg
+print(linalg.matrix_rank(M))

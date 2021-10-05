@@ -11,7 +11,7 @@ parser.add_argument('--dmax', type=float, default=15, help='Final time in days. 
 parser.add_argument('--dumpt', type=float, default=24, help='Dump time in hours. Default 24.')
 parser.add_argument('--gamma', type=float, default=1.0e5, help='Augmented Lagrangian scaling parameter. Default 10000.')
 parser.add_argument('--dt', type=float, default=1, help='Timestep in hours. Default 1.')
-parser.add_argument('--filename', type=str, default='w5semi')
+parser.add_argument('--filename', type=str, default='w5aug')
 parser.add_argument('--coords_degree', type=int, default=1, help='Degree of polynomials for sphere mesh approximation.')
 parser.add_argument('--degree', type=int, default=1, help='Degree of finite element space (the DG space).')
 parser.add_argument('--kspschur', type=int, default=3, help='Number of KSP iterations on the Schur complement.')
@@ -74,10 +74,6 @@ b = fd.Function(V2, name="Topography")
 c = fd.sqrt(g*H)
 gamma0 = args.gamma
 gamma = fd.Constant(gamma0)
-
-# Set up the exponential operator
-operator_in = fd.Function(W)
-u_in, eta_in = fd.split(operator_in)
 
 # D = eta + b
 
@@ -144,8 +140,9 @@ sparameters = {
     "ksp_type": "fgmres",
     "ksp_gmres_modifiedgramschmidt": None,
     'ksp_monitor': None,
-    'ksp_view': None,
-    "ksp_rtol": 1e-8,
+    'snes_converged_reason': None,
+    #'ksp_view': None,
+    "ksp_rtol": 1e-5,
     "pc_type": "fieldsplit",
     "pc_fieldsplit_type": "schur",
     "pc_fieldsplit_schur_fact_type": "full",

@@ -1,0 +1,17 @@
+A shallow water paper
+
+* Numerical experiments
+
+** implicit
+
+- [ ] get a handle on the correct suite of options
+  main issues are: dt, dt=3 gives FASTER convergence!
+- [ ] demonstrate mesh independence at fixed dt
+- [ ] a plot to show that it isn't nonsense
+- [ ] a plot to show dt dependence
+
+** semi-implicit 
+
+- [ ] list of maximum dts
+dtmax for ref 7 is 0.03 hours
+
