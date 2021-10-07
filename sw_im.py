@@ -149,6 +149,64 @@ sparameters = {
     "pc_fieldsplit_off_diag_use_amat": True,
 }
 
+
+# class HelmholtzPC(fd.PCBase):
+#     def initialize(self, pc):
+#         if pc.getType() != "python":
+#             raise ValueError("Expecting PC type python")
+#         prefix = pc.getOptionsPrefix() + "helmholtz_"
+
+#         mm_solve_parameters = {
+#             'ksp_type':'preonly',
+#             'pc_type':'bjacobi',
+#             'sub_pc_type':'lu'
+#         }
+
+#         # we assume P has things stuffed inside of it
+#         _, P = pc.getOperators()
+#         context = P.getPythonContext()
+#         appctx = context.appctx
+#         self.appctx = appctx
+
+#         # FunctionSpace checks
+#         u, v = context.a.arguments()
+#         if u.function_space() != v.function_space():
+#             raise ValueError("Pressure space test and trial space differ")
+
+#         # the mass solve
+#         a = u*v*fd.dx
+#         self.Msolver = fd.LinearSolver(fd.assemble(a),
+#                                        solver_parameters=
+#                                        mm_solve_parameters)
+#         # the Helmholtz solve
+#         eta = appctx.get("helmholtz_eta", 10)
+#         def get_laplace(q,phi):
+#             h = fd.avg(fd.CellVolume(mesh))/fd.FacetArea(mesh)
+#             mu = eta/h
+#             n = fd.FacetNormal(mesh)
+#             ad = (- fd.inner(2 * fd.avg(phi*n),
+#                              fd.avg(fd.grad(q)))
+#                   - fd.inner(fd.avg(fd.grad(phi)),
+#                              2 * fd.avg(q*n))
+#                   + mu * fd.inner(2 * fd.avg(phi*n),
+#                                   2 * fd.avg(q*n))) * fd.dS
+#             ad += fd.inner(fd.grad(q), fd.grad(phi)) * fd.dx
+#             return ad
+
+#         a = phi*q*fd.dx + g*H*dT**2*0.25*get_laplace(
+#             q, phi/(1 + (f*dT*0.5)**2))
+        
+        
+#     def update(self, pc):
+#         pass
+
+#     def apply(self, pc, x, y):
+        
+#     # copy petsc vec into Function
+#     with self.xf.dat.vec_wo as v:
+#         x.copy(v)
+
+        
 bottomright = {
     "ksp_type": "preonly",
     "ksp_max_it": args.kspschur,
