@@ -179,7 +179,7 @@ class HelmholtzPC(fd.PCBase):
                                        solver_parameters=
                                        mm_solve_parameters)
         # the Helmholtz solve
-        eta = appctx.get("helmholtz_eta", 10)
+        eta = appctx.get("helmholtz_eta", 20)
         def get_laplace(q,phi):
             h = fd.avg(fd.CellVolume(mesh))/fd.FacetArea(mesh)
             mu = eta/h
@@ -199,8 +199,8 @@ class HelmholtzPC(fd.PCBase):
         self.xfstar = fd.Function(V)
         self.xf = fd.Function(V)
         self.yf = fd.Function(V)
-        L = u*self.xf*fd.dx + get_laplace(u, self.xf)
-
+        L = get_laplace(u, self.xf)
+        #L += u*self.xf*fd.dx
         hh_prob = fd.LinearVariationalProblem(a, L, self.yf)
         solver_parameters = {'ksp_type':'preonly',
                              'pc_type':'lu',
