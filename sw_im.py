@@ -211,6 +211,9 @@ class HelmholtzPC(fd.PCBase):
     def update(self, pc):
         pass
 
+    def applyTranspose(self, pc, x, y):
+        raise NotImplementedError
+
     def apply(self, pc, x, y):
         
         #do the mass solver
