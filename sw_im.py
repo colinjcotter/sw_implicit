@@ -194,23 +194,41 @@ class HelmholtzPC(fd.PCBase):
             return ad
 
         a = (fd.Constant(2)/dT/H)*u*v*fd.dx + fd.Constant(0.5)*g*dT*get_laplace(u, v)
-        L = 
-        
-#     def update(self, pc):
-#         pass
+        #input and output functions
+        V = u.function_space()
+        self.xfstar = fd.Function(V)
+        self.xf = fd.Function(V)
+        self.yf = fd.Function(V)
+        L = v*self.xf*fd.dx + get_laplace(v, self.xf)
 
-#     def apply(self, pc, x, y):
-        
-#     # copy petsc vec into Function
-#     with self.xf.dat.vec_wo as v:
-#         x.copy(v)
+        hh_prob = fd.LinearVariationalProblem(a, L, self.yf)
+        solver_parameters = {'ksp_type':'preonly',
+                             'pc_type':'lu',
+                             'pc_factor_mat_solver_package','mumps'}
+        self.hh_solver = fd.LinearVariationalSolver(
+            hh_prob, solver_parameters)
 
+    def update(self, pc):
+        pass
+
+    def apply(self, pc, x, y):
         
+        #do the mass solver
+        self.Msolver.solve(self.xf, x)
+
+        #do the Helmholtz solver
+        self.hh_solver.solve()
+
+        # copy petsc vec into Function
+        with self.yf.dat.vec_ro as v:
+            y.copy(v)
+
 bottomright = {
     "ksp_type": "preonly",
     "ksp_max_it": args.kspschur,
     "pc_type": "python",
-    "pc_python_type": "firedrake.MassInvPC",
+    #"pc_python_type": "firedrake.MassInvPC",
+    "pc_python_type": "__main__.HelmholtzPC",
     "Mp_pc_type": "bjacobi",
     "Mp_sub_pc_type": "ilu"
 }
