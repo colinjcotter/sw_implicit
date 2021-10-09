@@ -204,7 +204,7 @@ class HelmholtzPC(fd.PCBase):
         hh_prob = fd.LinearVariationalProblem(a, L, self.yf)
         solver_parameters = {'ksp_type':'preonly',
                              'pc_type':'lu',
-                             'pc_factor_mat_solver_package':'mumps'}
+                             'pc_factor_mat_solver_type':'mumps'}
         self.hh_solver = fd.LinearVariationalSolver(
             hh_prob, solver_parameters=solver_parameters)
 
