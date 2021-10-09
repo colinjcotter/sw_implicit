@@ -119,7 +119,7 @@ if vector_invariant:
 
 eta = fd.Constant(10.)
 class HelmholtzPC(fd.AuxiliaryOperatorPC):
-    
+
     def form(self, pc, phi, q):
         def get_laplace(q,phi):
             h = fd.avg(fd.CellVolume(mesh))/fd.FacetArea(mesh)
