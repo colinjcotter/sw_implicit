@@ -199,14 +199,14 @@ class HelmholtzPC(fd.PCBase):
         self.xfstar = fd.Function(V)
         self.xf = fd.Function(V)
         self.yf = fd.Function(V)
-        L = v*self.xf*fd.dx + get_laplace(v, self.xf)
+        L = u*self.xf*fd.dx + get_laplace(u, self.xf)
 
         hh_prob = fd.LinearVariationalProblem(a, L, self.yf)
         solver_parameters = {'ksp_type':'preonly',
                              'pc_type':'lu',
                              'pc_factor_mat_solver_package':'mumps'}
         self.hh_solver = fd.LinearVariationalSolver(
-            hh_prob, solver_parameters)
+            hh_prob, solver_parameters=solver_parameters)
 
     def update(self, pc):
         pass
@@ -215,16 +215,20 @@ class HelmholtzPC(fd.PCBase):
         raise NotImplementedError
 
     def apply(self, pc, x, y):
+
+        # copy petsc vec into Function
+        with self.xfstar.dat.vec_wo as v:
+            x.copy(v)
         
         #do the mass solver
-        self.Msolver.solve(self.xf, x)
+        self.Msolver.solve(self.xf, self.xfstar)
 
         #do the Helmholtz solver
         self.hh_solver.solve()
 
         # copy petsc vec into Function
         with self.yf.dat.vec_ro as v:
-            y.copy(v)
+            v.copy(y)
 
 bottomright = {
     "ksp_type": "preonly",
