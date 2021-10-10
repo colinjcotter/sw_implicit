@@ -231,8 +231,9 @@ class HelmholtzPC(fd.PCBase):
             v.copy(y)
 
 bottomright = {
-    "ksp_type": "preonly",
+    "ksp_type": "fgmres",
     "ksp_max_it": args.kspschur,
+    "ksp_monitor": None,
     "pc_type": "python",
     #"pc_python_type": "firedrake.MassInvPC",
     "pc_python_type": "__main__.HelmholtzPC",
