@@ -142,7 +142,7 @@ sparameters = {
     'ksp_monitor': None,
     'snes_converged_reason': None,
     #'ksp_view': None,
-    "ksp_rtol": 1e-5,
+    #"ksp_rtol": 1e-5,
     "pc_type": "fieldsplit",
     "pc_fieldsplit_type": "schur",
     "pc_fieldsplit_schur_fact_type": "full",
@@ -202,11 +202,9 @@ class HelmholtzPC(fd.PCBase):
         L = get_laplace(u, self.xf)
         #L += u*self.xf*fd.dx
         hh_prob = fd.LinearVariationalProblem(a, L, self.yf)
-        solver_parameters = {'ksp_type':'preonly',
-                             'pc_type':'lu',
-                             'pc_factor_mat_solver_type':'mumps'}
         self.hh_solver = fd.LinearVariationalSolver(
-            hh_prob, solver_parameters=solver_parameters)
+            hh_prob,
+            options_prefix=prefix)
 
     def update(self, pc):
         pass
@@ -232,13 +230,22 @@ class HelmholtzPC(fd.PCBase):
 
 bottomright = {
     "ksp_type": "fgmres",
+    "ksp_gmres_modifiedgramschmidt": None,
     "ksp_max_it": args.kspschur,
     "ksp_monitor": None,
     "pc_type": "python",
     #"pc_python_type": "firedrake.MassInvPC",
     "pc_python_type": "__main__.HelmholtzPC",
-    "Mp_pc_type": "bjacobi",
-    "Mp_sub_pc_type": "ilu"
+    "helmholtz" :
+    {"pc_type": "lu",
+     "mg_coarse_ksp_type": "preonly",
+     "mg_coarse_pc_type": "python",
+     "mg_coarse_pc_python_type": "firedrake.AssembledPC",
+     "mg_coarse_assembled_pc_type": "lu",
+     "mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
+     "mg_levels_ksp_type": "richardson",
+     "mg_levels_pc_type": "bjacobi",
+     "mg_levels_sub_pc_type": "ilu"}
 }
 
 sparameters["fieldsplit_1"] = bottomright
