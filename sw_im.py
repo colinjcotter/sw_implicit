@@ -1,7 +1,4 @@
 import firedrake as fd
-from petsc4py import PETSc
-PETSc.Sys.popErrorHandler()
-
 #get command arguments
 import argparse
 parser = argparse.ArgumentParser(description='Williamson 5 testcase for augmented Lagrangian solver.')
@@ -136,11 +133,12 @@ if vector_invariant:
 # x^{k+1} = x^k + xp.
 sparameters = {
     "mat_type":"matfree",
-    'snes_monitor': None,
+    #'snes_monitor': None,
     "ksp_type": "fgmres",
     "ksp_gmres_modifiedgramschmidt": None,
-    'ksp_monitor': None,
+    #'ksp_monitor': None,
     'snes_converged_reason': None,
+    'ksp_converged_reason': None,
     #'ksp_view': None,
     #"ksp_rtol": 1e-5,
     "pc_type": "fieldsplit",
@@ -232,7 +230,7 @@ bottomright = {
     "ksp_type": "fgmres",
     "ksp_gmres_modifiedgramschmidt": None,
     "ksp_max_it": args.kspschur,
-    "ksp_monitor": None,
+    #"ksp_monitor": None,
     "pc_type": "python",
     #"pc_python_type": "firedrake.MassInvPC",
     "pc_python_type": "__main__.HelmholtzPC",
