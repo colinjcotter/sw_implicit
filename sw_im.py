@@ -133,12 +133,12 @@ if vector_invariant:
 # x^{k+1} = x^k + xp.
 sparameters = {
     "mat_type":"matfree",
-    #'snes_monitor': None,
+    'snes_monitor': None,
     "ksp_type": "fgmres",
     "ksp_gmres_modifiedgramschmidt": None,
-    #'ksp_monitor': None,
-    'snes_converged_reason': None,
-    'ksp_converged_reason': None,
+    'ksp_monitor': None,
+    #'snes_converged_reason': None,
+    #'ksp_converged_reason': None,
     #'ksp_view': None,
     #"ksp_rtol": 1e-5,
     "pc_type": "fieldsplit",
@@ -230,18 +230,24 @@ bottomright = {
     "ksp_type": "fgmres",
     "ksp_gmres_modifiedgramschmidt": None,
     "ksp_max_it": args.kspschur,
-    #"ksp_monitor": None,
+    #"ksp_converged_reason": None,
+    "ksp_monitor": None,
     "pc_type": "python",
     #"pc_python_type": "firedrake.MassInvPC",
     "pc_python_type": "__main__.HelmholtzPC",
     "helmholtz" :
-    {"pc_type": "lu",
+    {"ksp_type":"preonly",
+     #"ksp_converged_reason": None,
+     #"mg_cycle_type":"w",
+     "pc_type": "mg",
+     "pc_mg_type": "full",
+     "mg_levels_ksp_type": "chebyshev",
+     "mg_levels_ksp_max_it": 2,
      "mg_coarse_ksp_type": "preonly",
      "mg_coarse_pc_type": "python",
      "mg_coarse_pc_python_type": "firedrake.AssembledPC",
      "mg_coarse_assembled_pc_type": "lu",
      "mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
-     "mg_levels_ksp_type": "richardson",
      "mg_levels_pc_type": "bjacobi",
      "mg_levels_sub_pc_type": "ilu"}
 }
@@ -385,6 +391,7 @@ file_sw.write(un, etan, qn)
 Unp1.assign(Un)
 
 print('tmax', tmax, 'dt', dt)
+itcount = 0
 while t < tmax + 0.5*dt:
     print(t)
     t += dt
@@ -399,3 +406,5 @@ while t < tmax + 0.5*dt:
         qsolver.solve()
         file_sw.write(un, etan, qn)
         tdump -= dumpt
+    itcount += nsolver.snes.getLinearSolveIterations()
+print("Iterations", itcount)
