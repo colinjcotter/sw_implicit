@@ -66,6 +66,9 @@
 \theoremstyle{thmstylethree}%
 \newtheorem{definition}{Definition}%
 
+\newcommand{\pp}[2]{\frac{\partial #1}{\partial #2}} 
+\DeclareMathOperator{\diff}{d}
+\newcommand{\jump}[1]{[\![ #1]\!]} 
 \raggedbottom
 %%\unnumbered% uncomment this for unnumbered level heads
 
@@ -117,7 +120,38 @@
 \section{Formulation}\label{sec:formul}
 
 In this article we restrict the focus to compatible finite elements,
-i.e. finite elements derived from a discrete de Rham complex 
+i.e. finite elements derived from a discrete de Rham complex as
+detailed in \citet{arnold2006finite,arnold2018finite}, and discussed
+for geophysical fluid dynamics in
+\citet{cotter2012mixed,gibson2019compatible}.
+
+We consider the shallow water equations on the rotating sphere (centre
+the origin, with radius $R$),
+\begin{align}
+  u_t + (u\cdot \nabla)u + fu^{\perp} + g\nabla (D+b) & = 0, \\
+  D_t + \nabla(uD) & = 0, \Omega
+\end{align}
+where $u$ is the velocity (constrained to be tangential to the
+sphere), $f=2\Omega z/R$ is the Coriolis parameter (for a sphere with
+rotation rate $\Omega$), $u^{\perp}=k\times u$ where $k$ is the unit
+vector tangential to the surface of the sphere, $g$ is the
+acceleration due to gravity, $D$ is the depth of the fluid, and $b$ is
+the height of the bottom boundary.
+
+There are a few different ways to treat the advective nonlinearity
+numerically, and for example, we will use the spatial discretisation
+of \citet{gibson2019compatible}, namely
+\begin{align}
+  \int_{\Omega}{w}\cdot\pp{{u}}{t}\diff x
+  - \int_\Omega {u}\cdot\nabla^\perp ({u}^\perp\cdot{w})\diff x
+  + \int_\Gamma\left[{n}^\perp({u}^\perp\cdot{w})\right]\cdot\widetilde{{u}}\diff S\nonumber\\
+  + \int_\Omega{w}\cdot (f{u}^\perp) \diff x
+  - \int_{\Omega}\nabla\cdot{w} \left(g(h + \eta_b)
+  + \frac{1}{2}|{u}|^2 \right)\diff x &=0,\label{eq:weakVISWE-A}\\
+  \int_{\Omega}\phi\pp{h}{t}\diff x - \int_{\Omega}h({u}\cdot\nabla)\phi\diff x
+  + \int_{\Gamma} \jump{{u}\phi}\widetilde{h}\diff x
+  &= 0.\label{eq:weakVISWE-B}
+\end{align}
 
 \section{Numerical experiments}\label{sec:numerics}
 
