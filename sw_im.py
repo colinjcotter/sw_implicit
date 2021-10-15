@@ -1,5 +1,7 @@
 import firedrake as fd
 #get command arguments
+from petsc4py import PETSc
+PETSc.Sys.popErrorHandler()
 import argparse
 parser = argparse.ArgumentParser(description='Williamson 5 testcase for augmented Lagrangian solver.')
 parser.add_argument('--base_level', type=int, default=1, help='Base refinement level of icosahedral grid for MG solve. Default 1.')
@@ -14,12 +16,13 @@ parser.add_argument('--degree', type=int, default=1, help='Degree of finite elem
 parser.add_argument('--kspschur', type=int, default=3, help='Number of KSP iterations on the Schur complement.')
 parser.add_argument('--kspmg', type=int, default=3, help='Number of KSP iterations in the MG levels.')
 parser.add_argument('--tlblock', type=str, default='mg', help='Solver for the velocity-velocity block. mg==Multigrid with patchPC, lu==direct solver with MUMPS, patch==just do a patch smoother. Default is mg')
+parser.add_argument('--schurpc', type=str, default='mass', help='Preconditioner for the Schur complement. mass==mass inverse, helmholtz==helmholtz inverse * laplace * mass inverse. Default is mass')
 parser.add_argument('--show_args', action='store_true', help='Output all the arguments.')
 args = parser.parse_known_args()
 args = args[0]
 
 if args.show_args:
-    print(args)
+    PETSc.Sys.Print(args)
 
 # some domain, parameters and FS setup
 R0 = 6371220.
@@ -198,7 +201,7 @@ class HelmholtzPC(fd.PCBase):
         self.xf = fd.Function(V)
         self.yf = fd.Function(V)
         L = get_laplace(u, self.xf)
-        #L += u*self.xf*fd.dx
+        #L += fd.Constant(0.0e-6)*u*self.xf*fd.dx
         hh_prob = fd.LinearVariationalProblem(a, L, self.yf)
         self.hh_solver = fd.LinearVariationalSolver(
             hh_prob,
@@ -226,33 +229,44 @@ class HelmholtzPC(fd.PCBase):
         with self.yf.dat.vec_ro as v:
             v.copy(y)
 
-bottomright = {
-    "ksp_type": "fgmres",
+bottomright_helm = {
+    "ksp_type": "preonly",
     "ksp_gmres_modifiedgramschmidt": None,
     "ksp_max_it": args.kspschur,
-    #"ksp_converged_reason": None,
-    "ksp_monitor": None,
     "pc_type": "python",
-    #"pc_python_type": "firedrake.MassInvPC",
     "pc_python_type": "__main__.HelmholtzPC",
     "helmholtz" :
-    {"ksp_type":"preonly",
-     #"ksp_converged_reason": None,
-     #"mg_cycle_type":"w",
-     "pc_type": "mg",
+    {"ksp_type":"gmres",
+     "pc_type": "lu",
      "pc_mg_type": "full",
      "mg_levels_ksp_type": "chebyshev",
-     "mg_levels_ksp_max_it": 2,
+     "mg_levels_ksp_max_it": 3,
+     "mg_levels_ksp_chebyshev_esteig": None,
      "mg_coarse_ksp_type": "preonly",
      "mg_coarse_pc_type": "python",
      "mg_coarse_pc_python_type": "firedrake.AssembledPC",
      "mg_coarse_assembled_pc_type": "lu",
      "mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
      "mg_levels_pc_type": "bjacobi",
-     "mg_levels_sub_pc_type": "ilu"}
+     "mg_levels_sub_pc_type": "jacobi"}
 }
 
-sparameters["fieldsplit_1"] = bottomright
+bottomright_mass = {
+    "ksp_type": "preonly",
+    "ksp_gmres_modifiedgramschmidt": None,
+    "ksp_max_it": args.kspschur,
+    "pc_type": "python",
+    "pc_python_type": "firedrake.MassInvPC",
+    "Mp_pc_type": "bjacobi",
+    "Mp_sub_pc_type": "ilu"
+}
+
+if args.schurpc == "mass":
+    sparameters["fieldsplit_1"] = bottomright_mass
+elif args.schurpc == "helmholtz":
+    sparameters["fieldsplit_1"] = bottomright_helm
+else:
+    raise KeyError('Unknown Schur PC option.')
 
 topleft_LU = {
     "ksp_type": "preonly",
@@ -333,7 +347,7 @@ elif args.tlblock == "patch":
 else:
     assert(args.tlblock=="lu")
     sparameters["fieldsplit_0"] = topleft_LU
-
+    
 dt = 60*60*args.dt
 dT.assign(dt)
 t = 0.
@@ -390,10 +404,10 @@ qsolver.solve()
 file_sw.write(un, etan, qn)
 Unp1.assign(Un)
 
-print('tmax', tmax, 'dt', dt)
+PETSc.Sys.Print('tmax', tmax, 'dt', dt)
 itcount = 0
 while t < tmax + 0.5*dt:
-    print(t)
+    PETSc.Sys.Print(t)
     t += dt
     tdump += dt
 
@@ -407,4 +421,4 @@ while t < tmax + 0.5*dt:
         file_sw.write(un, etan, qn)
         tdump -= dumpt
     itcount += nsolver.snes.getLinearSolveIterations()
-print("Iterations", itcount)
+PETSc.Sys.Print("Iterations", itcount, "dt", dt, "tlblock", args.tlblock, "ref_level", args.ref_level, "dmax", args.dmax)
