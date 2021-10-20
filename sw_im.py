@@ -13,8 +13,8 @@ parser.add_argument('--dt', type=float, default=1, help='Timestep in hours. Defa
 parser.add_argument('--filename', type=str, default='w5aug')
 parser.add_argument('--coords_degree', type=int, default=1, help='Degree of polynomials for sphere mesh approximation.')
 parser.add_argument('--degree', type=int, default=1, help='Degree of finite element space (the DG space).')
-parser.add_argument('--kspschur', type=int, default=3, help='Number of KSP iterations on the Schur complement.')
-parser.add_argument('--kspmg', type=int, default=3, help='Number of KSP iterations in the MG levels.')
+parser.add_argument('--kspschur', type=int, default=3, help='Number of KSP iterations on the Schur complement. Default 3.')
+parser.add_argument('--kspmg', type=int, default=5, help='Number of KSP iterations in the MG levels. Default 5.')
 parser.add_argument('--tlblock', type=str, default='mg', help='Solver for the velocity-velocity block. mg==Multigrid with patchPC, lu==direct solver with MUMPS, patch==just do a patch smoother. Default is mg')
 parser.add_argument('--schurpc', type=str, default='mass', help='Preconditioner for the Schur complement. mass==mass inverse, helmholtz==helmholtz inverse * laplace * mass inverse. Default is mass')
 parser.add_argument('--show_args', action='store_true', help='Output all the arguments.')
@@ -296,10 +296,10 @@ topleft_MG = {
     "mg_levels_patch_pc_patch_multiplicative": False,
     "mg_levels_patch_pc_patch_symmetrise_sweep": False,
     "mg_levels_patch_pc_patch_construct_dim": 0,
-    #"mg_levels_patch_pc_patch_sub_mat_type": "seqdense",
-    #"mg_levels_patch_pc_patch_dense_inverse": True,
-    #"mg_levels_patch_pc_patch_precompute_element_tensors": True,
-    #"mg_levels_patch_sub_pc_factor_mat_solver_type": "petsc",
+    "mg_levels_patch_pc_patch_sub_mat_type": "seqdense",
+    "mg_levels_patch_pc_patch_dense_inverse": True,
+    "mg_levels_patch_pc_patch_precompute_element_tensors": True,
+    "mg_levels_patch_sub_pc_factor_mat_solver_type": "petsc",
     "mg_levels_patch_sub_ksp_type": "preonly",
     "mg_levels_patch_sub_pc_type": "lu",
 }
@@ -406,6 +406,7 @@ Unp1.assign(Un)
 
 PETSc.Sys.Print('tmax', tmax, 'dt', dt)
 itcount = 0
+stepcount = 0
 while t < tmax + 0.5*dt:
     PETSc.Sys.Print(t)
     t += dt
@@ -420,5 +421,7 @@ while t < tmax + 0.5*dt:
         qsolver.solve()
         file_sw.write(un, etan, qn)
         tdump -= dumpt
+    stepcount += 1
     itcount += nsolver.snes.getLinearSolveIterations()
-PETSc.Sys.Print("Iterations", itcount, "dt", dt, "tlblock", args.tlblock, "ref_level", args.ref_level, "dmax", args.dmax)
+PETSc.Sys.Print("Iterations", itcount, "its per step", itcount/stepcount,
+                "dt", dt, "tlblock", args.tlblock, "ref_level", args.ref_level, "dmax", args.dmax)
