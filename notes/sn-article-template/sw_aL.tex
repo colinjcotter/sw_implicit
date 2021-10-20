@@ -23,7 +23,7 @@
 %%\documentclass[pdflatex,sn-basic]{sn-jnl}% Basic Springer Nature Reference Style/Chemistry Reference Style
 
 %%\documentclass[sn-basic]{sn-jnl}% Basic Springer Nature Reference Style/Chemistry Reference Style
-\documentclass[sn-mathphys]{sn-jnl}% Math and Physical Sciences Reference Style
+\documentclass[pdflatex,sn-mathphys]{sn-jnl}% Math and Physical Sciences Reference Style
 %%\documentclass[sn-aps]{sn-jnl}% American Physical Society (APS) Reference Style
 %%\documentclass[sn-vancouver]{sn-jnl}% Vancouver Reference Style
 %%\documentclass[sn-apa]{sn-jnl}% APA Reference Style
@@ -48,7 +48,6 @@
 %%%%  of the journal take precedence. A detailed User Manual is available in the 
 %%%%  template package for technical guidance.
 %%%%%=============================================================================%%%%
-
 \jyear{2021}%
 
 %% as per the requirement new theorem styles can be included as shown below
@@ -66,6 +65,9 @@
 \theoremstyle{thmstylethree}%
 \newtheorem{definition}{Definition}%
 
+\newcommand{\pp}[2]{\frac{\partial #1}{\partial #2}} 
+\DeclareMathOperator{\diff}{d}
+\newcommand{\jump}[1]{[\![ #1]\!]} 
 \raggedbottom
 %%\unnumbered% uncomment this for unnumbered level heads
 
@@ -117,7 +119,201 @@
 \section{Formulation}\label{sec:formul}
 
 In this article we restrict the focus to compatible finite elements,
-i.e. finite elements derived from a discrete de Rham complex 
+i.e. finite elements derived from a discrete de Rham complex as
+detailed in \citet{arnold2006finite,arnold2018finite}, and discussed
+for geophysical fluid dynamics in
+\citet{cotter2012mixed,gibson2019compatible}. We shall refer to the
+H(div) finite element space as $V$ and the corresponding discontinuous
+finite element space as $Q$.
+
+We consider the shallow water equations on the rotating sphere (centre
+the origin, with radius $R$),
+\begin{align}
+  u_t + (u\cdot \nabla)u + fu^{\perp} + g\nabla (D+b) & = 0, \\
+  D_t + \nabla(uD) & = 0,
+\end{align}
+where $u$ is the velocity (constrained to be tangential to the
+sphere), $f=2f_0 z/R$ is the Coriolis parameter (for a sphere with
+rotation rate $f_0$), $u^{\perp}=k\times u$ where $k$ is the unit
+vector tangential to the surface of the sphere, $g$ is the
+acceleration due to gravity, $D$ is the depth of the fluid, and $b$ is
+the height of the bottom boundary.
+
+There are a few different ways to treat the advective nonlinearity
+numerically, and for example, we will use the spatial discretisation
+of \citet{gibson2019compatible}, namely to find time dependent
+$u\in V$ and $D\in Q$, 
+\begin{align}
+  \int_{\Omega}{w}\cdot\pp{{u}}{t}\diff x
+  - \int_\Omega {u}\cdot\nabla^\perp ({u}^\perp\cdot{w})\diff x
+  + \int_\Gamma\jump{{n}^\perp({u}^\perp\cdot{w})}\cdot\widetilde{{u}}\diff S\nonumber\\
+  + \int_\Omega{w}\cdot (f{u}^\perp) \diff x
+  - \int_{\Omega}\nabla\cdot{w} \left(g(D + b)
+  + \frac{1}{2}|{u}|^2 \right)\diff x &=0,\, \forall w\in V, \label{eq:weakVISWE-A}\\
+  \int_{\Omega}\phi\pp{D}{t}\diff x - \int_{\Omega}D({u}\cdot\nabla)\phi\diff x
+  + \int_{\Gamma} \jump{{u}\phi}\widetilde{D}\diff x
+  &= 0,\label{eq:weakVISWE-B} \forall \phi \in Q,
+\end{align}
+where $\Gamma$ is the set of all interelement facets,
+$\jump{a}=a^+-a^-$ (with the $+$ and $-$ indices indicating the values
+of fields on the two arbitrarily labelled sides of each facet), $n$ is
+the unit normal pointing from the $+$ side to the $-$ side of each
+facet, and $\tilde{a}$ indicates the value of a field $a$ evaluated on
+the upwind side of a facet, i.e. the side where ${u}\cdot{n}<
+0$. However, other treatments of the nonlinearity are possible within
+this framework.  To make this agnosticism clear, we write the spatial
+semidiscretisation in the following more general form,
+
+\begin{align}
+  \int_{\Omega}{w}\cdot\pp{{u}}{t}\diff x
+  + A(u,w)
+\nonumber\\
+  + \int_\Omega{w}\cdot (f{u}^\perp) \diff x
+  - \int_{\Omega}\nabla\cdot{w} g(D + b)\diff x &=0,\, \forall w\in V, \label{eq:weakVISWE-A2}\\
+  \int_{\Omega}\phi\pp{D}{t}\diff x
+  + B(D,u,\phi)
+  &= 0,\label{eq:weakVISWE-B2} \forall \phi \in Q.
+\end{align}
+After discretisation using using the implicit midpoint rule or the
+Crank-Nicholson rule, we obtain a coupled nonlinear system to solve
+for $u^{n+1}$, $D^{n+1}$, the field values at the next timestep, given
+$u^n$ and $D^n$. One Newton iteration of this system then takes the
+form
+\begin{align}
+  \int_{\Omega}{w}\cdot v\diff x
+  + \beta A_u(u;v,w)
+\nonumber\\
+  + \beta \int_\Omega{w}\cdot (f{v}^\perp) \diff x
+  - \beta \int_{\Omega}\nabla\cdot{w} gh \diff x &=-R_u[w],\, \forall w\in V, \label{eq:Newton-A}\\
+  \int_{\Omega}\phi h\diff x
+  + B_u(D,u;v,\phi)
+  + B_D(D,u;h,\phi)
+  &= -R_D[\phi],\label{eq:Newton-B} \forall \phi \in Q,
+\end{align}
+where $u$ are $D$ are the current iterative approximations for
+$u^{n+1}$ and $D^{n+1}$, $h$ and $v$ are the iterative corrections,
+$\beta=\Delta t/2$, $\Delta t$ is the timestep, $R_u[w]$, $R_D[\phi]$
+are the residuals, $A_u$ is the linearisation of $A$, and $B_u$ and
+$B_D$ are the linearisations of $B$ with respect to $u$ and $D$,
+respectively. It is this coupled system for $v$ and $h$ that we aim to
+solve using an iterative method.
+
+The goal of the augmented Lagrangian technique is to modify these
+systems such that the Schur complement to Equations
+(\ref{eq:Newton-A}-\ref{eq:Newton-B}) (obtained by eliminating $v$) is
+easier to precondition. This is done by returning to Equations 
+(\ref{eq:weakVISWE-A2}-\ref{eq:weakVISWE-B2}) and adding the term
+\begin{equation}
+  \gamma \left(
+  \int_{\Omega}(\nabla\cdot w)\pp{D}{t}\diff x
+  + B(D,u,\nabla\cdot w)  \right)
+\end{equation}
+to Equation \eqref{eq:weakVISWE-A2}. This changes the equation, but
+not the solution, due to the discrete de Rham condition $w\in
+V\implies \nabla\cdot w\in Q$, so this equation will vanish whenever
+\eqref{eq:weakVISWE-B2} is satisfied, by substituting
+$\phi=\nabla\cdot w$. The result is that we obtain the following
+modification to the Newton update,
+\begin{align}
+  \int_{\Omega}{w}\cdot v\diff x
+  + \beta A_u(u;v,w)
+    + \beta \int_\Omega{w}\cdot (f{v}^\perp) \diff x
+\nonumber\\
+- \beta \int_{\Omega}\nabla\cdot{w} gh \diff x
++  \gamma\int_{\Omega}(\nabla\cdot w) h\diff x \nonumber \\
+  + \gamma\left(B_u(D,u;v,\nabla\cdot w)
+  + B_D(D,u;h,\nabla\cdot w)\right)
+&=-R_u[w] - \gamma R_D[\nabla\cdot w],\, \forall w\in V, \label{eq:NewtonAL-v}\\
+  \int_{\Omega}\phi h\diff x
+  + B_u(D,u;v,\phi)
+  + B_D(D,u;h,\phi)
+  &= -R_D[\phi],\label{eq:NewtonAL-h} \forall \phi \in Q,
+\end{align}
+
+We now consider the iterative solution of this system by
+a Schur complement solver that (approximately) forms
+the Schur complement system by eliminating $v$ to get a
+single system for $h$. This is implemented by a matrix-free
+Krylov method that applies the action of the Schur complement
+on $h$ by composing the (approximate) inverse matrix in
+the $v-w$ block with the pressure gradient and $B_u$ matrices.
+This Krylov method then needs a preconditioner for efficient
+solution.
+
+The preconditioner is derived by considering the approximate form of
+the Schur complement operator for large $\gamma$. Here we perform
+this derivation by considering that the Schur complement system is
+equivalent to solving the equation
+\begin{equation}
+    \int_{\Omega}\phi h\diff x
+  + B_u(D,u;v,\phi)
+  + B_D(D,u;h,\phi)
+  = -R'_D[\phi], \forall \phi \in Q,
+\end{equation}
+subject to the constraint
+\begin{align}
+  \int_{\Omega}{w}\cdot v\diff x
+  + \beta A_u(u;v,w)
+    + \beta \int_\Omega{w}\cdot (f{v}^\perp) \diff x
+\nonumber\\
+- \beta \int_{\Omega}\nabla\cdot{w} gh \diff x
++  \gamma\int_{\Omega}(\nabla\cdot w) h\diff x \nonumber \\
+  + \gamma\left(B_u(D,u;v,\nabla\cdot w)
+  + B_D(D,u;h,\nabla\cdot w)\right) = 0,
+\end{align}
+for appropriately modified residual $R'_D$. Formally, we expand the
+solution of this constraint equation asymptotically for large $\gamma$
+as $v=v_0 + \gamma^{-1}v_1 + \mathcal{O}(\gamma^{-2})$. At leading
+order, we recover
+\begin{equation}
+  \int_{\Omega}\phi h\diff x
+  + B_u(D,u;v_0,\phi)
+  + B_D(D,u;h,\phi)
+  = 0,
+\end{equation}
+due to the compatibility condition that $\nabla\cdot$ is a surjective
+operator from $V$ to $Q$. At the next order, we get
+\begin{align}
+  \int_{\Omega}{w}\cdot v_0\diff x
+  + \beta A_u(u;v_0,w)
+  + \beta \int_\Omega{w}\cdot (f{v_0}^\perp) \diff x
+  \nonumber\\
+  - \beta \int_{\Omega}\nabla\cdot{w} gh \diff x
+  + \beta B_u(D,u;v_1,\nabla\cdot w)
+  = 0,
+\end{align}
+and we obtain the approximate Schur complement equation,
+\begin{equation}
+  \frac{1}{\gamma}\left(\beta \int_{\Omega}\phi gh \diff x
+  -\int_{\Omega}{w_\phi}\cdot v_0\diff x
+  - \beta A_u(u;v_0,w_\phi)
+  - \beta \int_\Omega{w_\phi}\cdot (f{v_0}^\perp) \diff x\right)
+  = R'_D[\phi], \, \forall \phi \in Q,
+\end{equation}
+where $w_\phi$ is the unique element of $\zeta^\perp$ such
+that $\nabla\cdot w_\phi=\phi$, with
+\begin{equation}
+  \zeta^\perp = \left\{ w\in V: \int_\omega w\cdot v \diff x
+  = 0, \, \forall v\in \zeta\right\},
+\end{equation}
+and $\zeta$ is the subspace of $V$ such that $v\in\zeta\implies
+\nabla\cdot v=0$.
+
+A non-rigorous inspection of this equation suggests that the second
+and fourth terms are lower order compared to the first term (because
+$w_\phi$ is something like an anti-Laplacian applied to $\phi$), and
+we optimistically also hope that the third term can also be
+neglected. Hence, we propose to precondition the Schur complement
+solver with the operator $\tilde{S}:Q\to Q$ defined by
+\begin{equation}
+  \int_\Omega \phi Sh \diff x = \frac{\beta g}{\gamma}\int_\Omega
+  \phi h \diff x, \quad \forall \phi \in Q, h \in Q.
+\end{equation}
+The only potential problem with this strategy is that the
+second term is dominating in the limit of small $\beta$ (i.e. small
+timesteps) and the second term is unbounded from below; we shall
+revisit this concern in the results.
+
 
 \section{Numerical experiments}\label{sec:numerics}
 
