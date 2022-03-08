@@ -141,9 +141,9 @@ elif args.time_scheme == 0:
         - half*dT*fd.inner(perp(fd.grad(fd.inner(v, perp(u0)))), u0)*dx
         - half*dT*fd.inner(perp(fd.grad(fd.inner(v, perp(u1)))), u1)*dx
         + half*dT*fd.inner(both(perp(n)*fd.inner(v, perp(u0))),
-                           both(Upwind*u0))*dS
+                           both(Upwind0*u0))*dS
         + half*dT*fd.inner(both(perp(n)*fd.inner(v, perp(u1))),
-                           both(Upwind*u1))*dS
+                           both(Upwind1*u1))*dS
         - half*dT*fd.div(v)*(g*(h0 + b) + K0)*dx
         - half*dT*fd.div(v)*(g*(h1 + b) + K1)*dx
         + phi*(h1 - h0)*dx
@@ -154,12 +154,12 @@ elif args.time_scheme == 0:
         + half*dT*fd.jump(phi)*(uup1('+')*h1('+')
                                 - uup1('-')*h1('-'))*dS
         # the extra bit
-        + gamma*(div(v)*(h1 - h0)*dx
-        - half*dT*fd.inner(fd.grad(div(v)), u0)*h0*dx
-        - half*dT*fd.inner(fd.grad(div(v)), u1)*h1*dx
-        + half*dT*fd.jump(div(v))*(uup0('+')*h0('+')
+        + gamma*(fd.div(v)*(h1 - h0)*dx
+        - half*dT*fd.inner(fd.grad(fd.div(v)), u0)*h0*dx
+        - half*dT*fd.inner(fd.grad(fd.div(v)), u1)*h1*dx
+        + half*dT*fd.jump(fd.div(v))*(uup0('+')*h0('+')
                                 - uup0('-')*h0('-'))*dS
-        + half*dT*fd.jump(div(v))*(uup1('+')*h1('+')
+        + half*dT*fd.jump(fd.div(v))*(uup1('+')*h1('+')
                                 - uup1('-')*h1('-'))*dS)
         )    
 else:
