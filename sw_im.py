@@ -1,6 +1,7 @@
 import firedrake as fd
 #get command arguments
 from petsc4py import PETSc
+import mg
 PETSc.Sys.popErrorHandler()
 import argparse
 parser = argparse.ArgumentParser(description='Williamson 5 testcase for augmented Lagrangian solver.')
@@ -18,6 +19,7 @@ parser.add_argument('--kspmg', type=int, default=5, help='Max number of KSP iter
 parser.add_argument('--tlblock', type=str, default='mg', help='Solver for the velocity-velocity block. mg==Multigrid with patchPC, lu==direct solver with MUMPS, patch==just do a patch smoother. Default is mg')
 parser.add_argument('--schurpc', type=str, default='mass', help='Preconditioner for the Schur complement. mass==mass inverse, helmholtz==helmholtz inverse * laplace * mass inverse. Default is mass')
 parser.add_argument('--show_args', action='store_true', help='Output all the arguments.')
+parser.add_argument('--time_scheme', type=int, default=0, help='Timestepping scheme. 0=Crank-Nicholson. 1=Implicit midpoint rule.')
 args = parser.parse_known_args()
 args = args[0]
 
@@ -87,23 +89,24 @@ Unp1 = fd.Function(W)
 
 u0, h0 = fd.split(Un)
 u1, h1 = fd.split(Unp1)
-uh = 0.5*(u0 + u1)
-hh = 0.5*(h0 + h1)
 n = fd.FacetNormal(mesh)
-Upwind = 0.5 * (fd.sign(fd.dot(uh, n)) + 1)
 
 
 def both(u):
     return 2*fd.avg(u)
 
 
-K = 0.5*fd.inner(uh, uh)
-uup = 0.5 * (fd.dot(uh, n) + abs(fd.dot(uh, n)))
 dT = fd.Constant(0.)
 dS = fd.dS
 
-vector_invariant = True
-if vector_invariant:
+if args.time_scheme = 1:
+    "implicit midpoint rule"
+    uh = 0.5*(u0 + u1)
+    hh = 0.5*(h0 + h1)
+    Upwind = 0.5 * (fd.sign(fd.dot(uh, n)) + 1)
+    K = 0.5*fd.inner(uh, uh)
+    uup = 0.5 * (fd.dot(uh, n) + abs(fd.dot(uh, n)))
+
     eqn = (
         fd.inner(v, u1 - u0)*dx + dT*fd.inner(v, f*perp(uh))*dx
         - dT*fd.inner(perp(fd.grad(fd.inner(v, perp(uh)))), uh)*dx
@@ -120,7 +123,48 @@ if vector_invariant:
                  + dT*fd.jump(fd.div(v))*(uup('+')*hh('+')
                                           - uup('-')*hh('-'))*dS)
         )
+elif method == 0:
+    "Crank-Nicholson rule"
+    half = Constant(0.5)
 
+    Upwind0 = 0.5 * (fd.sign(fd.dot(u0, n)) + 1)
+    K0 = 0.5*fd.inner(u0, u0)
+    uup0 = 0.5 * (fd.dot(u0, n) + abs(fd.dot(u0, n)))
+    Upwind1 = 0.5 * (fd.sign(fd.dot(u1, n)) + 1)
+    K1 = 0.5*fd.inner(u1, u1)
+    uup1 = 0.5 * (fd.dot(u1, n) + abs(fd.dot(u1, n)))
+
+    eqn = (
+        fd.inner(v, u1 - u0)*dx
+        + half*dT*fd.inner(v, f*perp(u0))*dx
+        + half*dT*fd.inner(v, f*perp(u1))*dx
+        - half*dT*fd.inner(perp(fd.grad(fd.inner(v, perp(u0)))), u0)*dx
+        - half*dT*fd.inner(perp(fd.grad(fd.inner(v, perp(u1)))), u1)*dx
+        + half*dT*fd.inner(both(perp(n)*fd.inner(v, perp(u0))),
+                           both(Upwind*u0))*dS
+        + half*dT*fd.inner(both(perp(n)*fd.inner(v, perp(u1))),
+                           both(Upwind*u1))*dS
+        - half*dT*fd.div(v)*(g*(h0 + b) + K0)*dx
+        - half*dT*fd.div(v)*(g*(h1 + b) + K1)*dx
+        + phi*(h1 - h0)*dx
+        - half*dT*fd.inner(fd.grad(phi), u0)*h0*dx
+        - half*dT*fd.inner(fd.grad(phi), u1)*h1*dx
+        + half*dT*fd.jump(phi)*(uup0('+')*h0('+')
+                                - uup0('-')*h0('-'))*dS
+        + half*dT*fd.jump(phi)*(uup1('+')*h1('+')
+                                - uup1('-')*h1('-'))*dS
+        # the extra bit
+        + gamma*(div(v)*(h1 - h0)*dx
+        - half*dT*fd.inner(fd.grad(div(v)), u0)*h0*dx
+        - half*dT*fd.inner(fd.grad(div(v)), u1)*h1*dx
+        + half*dT*fd.jump(div(v))*(uup0('+')*h0('+')
+                                - uup0('-')*h0('-'))*dS
+        + half*dT*fd.jump(div(v))*(uup1('+')*h1('+')
+                                - uup1('-')*h1('-'))*dS)
+        )    
+else:
+    raise NotImplementedError
+    
 # U_t + N(U) = 0
 # IMPLICIT MIDPOINT
 # U^{n+1} - U^n + dt*N( (U^{n+1}+U^n)/2 ) = 0.
@@ -358,6 +402,13 @@ ctx = {"mu": g*dt/gamma/2}
 nsolver = fd.NonlinearVariationalSolver(nprob,
                                         solver_parameters=sparameters,
                                         appctx=ctx)
+vtransfer = mg.SWTransfer(Upn1)
+transfers = {
+    V1.ufl_element(): (vtransfer.prolong, restrict, inject),
+    V2.ufl_element(): (prolong, restrict, inject)
+}
+transfermanager = TransferManager(native_transfers=transfers)
+nsolver.set_transfer_manager(transfermanager)
 dmax = args.dmax
 hmax = 24*dmax
 tmax = 60.*60.*hmax
