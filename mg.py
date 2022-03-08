@@ -13,10 +13,10 @@ class SWTransfer(object):
         '''
         self.w0 = w0
         self.ubar, self.hbar = w0.split()
-        mesh = u0.ufl_domain()
+        mesh = self.ubar.ufl_domain()
         self.V = FunctionSpace(mesh,
-                               u0.function_space().ufl_element())
-        self.degree = u0.function_space().ufl_element().degree()
+                               self.ubar.function_space().ufl_element())
+        self.degree = self.ubar.function_space().ufl_element().degree()
 
         # list of flags to say if we've set up before
         self.ready = {}
