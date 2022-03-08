@@ -13,8 +13,8 @@ parser.add_argument('--dt', type=float, default=1, help='Timestep in hours. Defa
 parser.add_argument('--filename', type=str, default='w5aug')
 parser.add_argument('--coords_degree', type=int, default=1, help='Degree of polynomials for sphere mesh approximation.')
 parser.add_argument('--degree', type=int, default=1, help='Degree of finite element space (the DG space).')
-parser.add_argument('--kspschur', type=int, default=3, help='Number of KSP iterations on the Schur complement. Default 3.')
-parser.add_argument('--kspmg', type=int, default=5, help='Number of KSP iterations in the MG levels. Default 5.')
+parser.add_argument('--kspschur', type=int, default=40, help='Max number of KSP iterations on the Schur complement. Default 40.')
+parser.add_argument('--kspmg', type=int, default=5, help='Max number of KSP iterations in the MG levels. Default 5.')
 parser.add_argument('--tlblock', type=str, default='mg', help='Solver for the velocity-velocity block. mg==Multigrid with patchPC, lu==direct solver with MUMPS, patch==just do a patch smoother. Default is mg')
 parser.add_argument('--schurpc', type=str, default='mass', help='Preconditioner for the Schur complement. mass==mass inverse, helmholtz==helmholtz inverse * laplace * mass inverse. Default is mass')
 parser.add_argument('--show_args', action='store_true', help='Output all the arguments.')
@@ -252,9 +252,10 @@ bottomright_helm = {
 }
 
 bottomright_mass = {
-    "ksp_type": "preonly",
+    "ksp_type": "fgmres",
     "ksp_gmres_modifiedgramschmidt": None,
     "ksp_max_it": args.kspschur,
+    "ksp_monitor":None,
     "pc_type": "python",
     "pc_python_type": "firedrake.MassInvPC",
     "Mp_pc_type": "bjacobi",
