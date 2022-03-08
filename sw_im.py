@@ -404,10 +404,10 @@ nsolver = fd.NonlinearVariationalSolver(nprob,
                                         appctx=ctx)
 vtransfer = mg.SWTransfer(Unp1)
 transfers = {
-    V1.ufl_element(): (vtransfer.prolong, fd.restrict, fd.inject),
+    V1.ufl_element(): (fd.prolong, fd.restrict, fd.inject),
     V2.ufl_element(): (fd.prolong, fd.restrict, fd.inject)
 }
-transfermanager = TransferManager(native_transfers=transfers)
+transfermanager = fd.TransferManager(native_transfers=transfers)
 nsolver.set_transfer_manager(transfermanager)
 dmax = args.dmax
 hmax = 24*dmax
