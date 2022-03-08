@@ -402,7 +402,7 @@ ctx = {"mu": g*dt/gamma/2}
 nsolver = fd.NonlinearVariationalSolver(nprob,
                                         solver_parameters=sparameters,
                                         appctx=ctx)
-vtransfer = mg.SWTransfer(Upn1)
+vtransfer = mg.SWTransfer(Unp1)
 transfers = {
     V1.ufl_element(): (vtransfer.prolong, restrict, inject),
     V2.ufl_element(): (prolong, restrict, inject)
