@@ -99,7 +99,7 @@ def both(u):
 dT = fd.Constant(0.)
 dS = fd.dS
 
-if args.time_scheme = 1:
+if args.time_scheme == 1:
     "implicit midpoint rule"
     uh = 0.5*(u0 + u1)
     hh = 0.5*(h0 + h1)
