@@ -123,9 +123,9 @@ if args.time_scheme == 1:
                  + dT*fd.jump(fd.div(v))*(uup('+')*hh('+')
                                           - uup('-')*hh('-'))*dS)
         )
-elif method == 0:
+elif args.time_scheme == 0:
     "Crank-Nicholson rule"
-    half = Constant(0.5)
+    half = fd.Constant(0.5)
 
     Upwind0 = 0.5 * (fd.sign(fd.dot(u0, n)) + 1)
     K0 = 0.5*fd.inner(u0, u0)
