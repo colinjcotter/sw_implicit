@@ -181,8 +181,8 @@ else:
 sparameters = {
     "mat_type":"matfree",
     'snes_monitor': None,
-    "ksp_type": "fgmres",
-    "ksp_gmres_modifiedgramschmidt": None,
+    "ksp_type": "gcr",
+    #"ksp_gmres_modifiedgramschmidt": None,
     'ksp_monitor': None,
     #'snes_converged_reason': None,
     #'ksp_converged_reason': None,
@@ -296,10 +296,10 @@ bottomright_helm = {
 }
 
 bottomright_mass = {
-    "ksp_type": "fgmres",
+    "ksp_type": "preonly",
     "ksp_gmres_modifiedgramschmidt": None,
     "ksp_max_it": args.kspschur,
-    "ksp_monitor":None,
+    #"ksp_monitor":None,
     "pc_type": "python",
     "pc_python_type": "firedrake.MassInvPC",
     "Mp_pc_type": "bjacobi",

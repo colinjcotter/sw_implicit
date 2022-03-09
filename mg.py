@@ -1,4 +1,8 @@
 from firedrake import *
+import numpy as np
+
+def both(e):
+    return e('+')+e('-')
 
 class SWTransfer(object):
     def __init__(self, w0):
@@ -23,13 +27,13 @@ class SWTransfer(object):
         # list of coarse and fine fluxes
         self.w_coarse_b = {} #broken mixed variable for F coarse
         self.F_coarse_b = {} #pointer to the F part of the above
-        self.coarse_weight = [] #averaging weight
+        self.coarse_weight = {} #averaging weight
         self.F_coarse = {}
         self.F_fine = {}
         self.u_coarse = {}
         self.w_fine_b = {} #broken mixed variable for u fine
         self.u_fine_b = {} #pointer to the u part of the above
-        self.fine_weight = [] #averaging weight
+        self.fine_weight = {} #averaging weight
         self.ubar_coarse = {}
         self.ubar_fine = {}
         self.hbar_coarse = {}
@@ -188,18 +192,27 @@ class SWTransfer(object):
             self.fine_average_kernel[key] = (domain, instructions)
             
         # update ubar and ubar on the levels
-        self.Ftransfer.inject(self.ubar, self.ubar_fine[key])
+        keymax = max(list(self.ubar_fine.keys()))
+        if keymax > key:
+            self.Ftransfer.inject(self.ubar, self.ubar_fine[key])
+        else:
+            self.ubar_fine[key].assign(self.ubar)
         self.Ftransfer.inject(self.ubar, self.ubar_coarse[key])
+        if keymax > key:
+            self.Ftransfer.inject(self.hbar, self.hbar_fine[key])
+        else:
+            self.hbar_fine[key].assign(self.hbar)
+        self.Ftransfer.inject(self.hbar, self.hbar_coarse[key])
         # copy coarse into the input to the coarse solver
         self.u_coarse[key].assign(coarse)
         # coarse solver produces w_coarse_b
         # This should be replaced with Slate
         self.coarse_solver[key].solve()
-        self.f_coarse[key].assign(0.)
-        par_loop(self.coarse_average_kernel, dx,
+        self.F_coarse[key].assign(0.)
+        par_loop(self.coarse_average_kernel[key], dx,
                  {"w": (self.coarse_weight[key], READ),
-                  "vec_in": (self.f_coarse_b[key], READ),
-                  "vec_out": (self.f_coarse[key], INC)},
+                  "vec_in": (self.F_coarse_b[key], READ),
+                  "vec_out": (self.F_coarse[key], INC)},
                  is_loopy_kernel=True)
         # standard transfer preserves divergence-free subspaces
         self.Ftransfer.prolong(self.F_coarse[key], self.F_fine[key])
@@ -207,7 +220,7 @@ class SWTransfer(object):
         self.fine_solver[key].solve()
         fine.assign(0.)
         # average u_fine_b (split from w_fine_b) into fine
-        par_loop(self.fine_average_kernel, dx,
+        par_loop(self.fine_average_kernel[key], dx,
                  {"w": (self.fine_weight[key], READ),
                   "vec_in": (self.u_fine_b[key], READ),
                   "vec_out": (fine, INC)},
