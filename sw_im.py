@@ -12,7 +12,7 @@ parser.add_argument('--dumpt', type=float, default=24, help='Dump time in hours.
 parser.add_argument('--gamma', type=float, default=1.0e5, help='Augmented Lagrangian scaling parameter. Default 10000.')
 parser.add_argument('--dt', type=float, default=1, help='Timestep in hours. Default 1.')
 parser.add_argument('--filename', type=str, default='w5aug')
-parser.add_argument('--coords_degree', type=int, default=3, help='Degree of polynomials for sphere mesh approximation.')
+parser.add_argument('--coords_degree', type=int, default=1, help='Degree of polynomials for sphere mesh approximation.')
 parser.add_argument('--degree', type=int, default=1, help='Degree of finite element space (the DG space).')
 parser.add_argument('--kspschur', type=int, default=40, help='Max number of KSP iterations on the Schur complement. Default 40.')
 parser.add_argument('--kspmg', type=int, default=5, help='Max number of KSP iterations in the MG levels. Default 5.')
@@ -36,6 +36,8 @@ deg = args.coords_degree
 distribution_parameters = {"partition": True, "overlap_type": (fd.DistributedMeshOverlapType.VERTEX, 2)}
 #distribution_parameters = {"partition": True, "overlap_type": (fd.DistributedMeshOverlapType.FACET, 2)}
 if args.tlblock == "mg":
+    assert(deg==1) # for higher degs, we need to make the hierarchy and
+    # then replace the mesh coordinates.
     basemesh = fd.IcosahedralSphereMesh(radius=R0,
                                         refinement_level=base_level, degree=deg,
                                         distribution_parameters = distribution_parameters)
