@@ -29,7 +29,10 @@ class SWTransfer(object):
         self.ubar_fine = {}
         self.hbar_coarse = {}
         self.hbar_fine = {}
-
+        self.coarse_solver = {}
+        self.fine_solver = {}
+        self.Ftransfer = TransferManager()
+        
     def prolong(self, coarse, fine):
         Vfine = FunctionSpace(fine.ufl_domain(),
                               fine.function_space().ufl_element())
@@ -43,7 +46,7 @@ class SWTransfer(object):
             coarse_element = coarse.function_space().ufl_element()
             Vcoarse = FunctionSpace(coarse_mesh, coarse_element)
             degree = self.degree
-
+            
             # make a solver du -> F (on coarse mesh)
             Tr = FunctionSpace(coarse_mesh, "HDiv Trace", degree)
             bNed = BrokenElement(FiniteElement("N1curl", triangle,
@@ -116,11 +119,11 @@ class SWTransfer(object):
             gamma, w = TestFunctions(Wfine)
             u = TrialFunction(Vfine)
             a = gamma('+')*inner(u('+'), n('+'))*hup*dS
-            a += inner(hbar*w, u)*dx
+            a += inner(hbar_fine*w, u)*dx
             L = gamma('+')*inner(self.F_fine[key]('+'), n('+'))*dS
             L += inner(w, self.F_fine[key])*dx
 
-            fine_prob = LinearVariationalProblem(a, L, self.F_fine,
+            fine_prob = LinearVariationalProblem(a, L, self.u_fine[key],
                                                    constant_jacobian=False)
             fine_solver = LinearVariationalSolver(fine_prob,
                                                   solver_parameters=
@@ -128,14 +131,14 @@ class SWTransfer(object):
             self.fine_solver[key] = fine_solver
 
         # update ubar and ubar on the levels
-        inject(self.ubar, self.ubar_fine[key])
-        inject(self.ubar, self.ubar_coarse[key])
+        self.Ftransfer.inject(self.ubar, self.ubar_fine[key])
+        self.Ftransfer.inject(self.ubar, self.ubar_coarse[key])
         # copy coarse into the input to the coarse solver
         self.u_coarse[key].assign(coarse)
         # coarse solver produces F_coarse
         self.coarse_solver[key].solve()
         # standard transfer preserves divergence-free subspaces
-        prolong(self.F_coarse[key], self.F_fine[key])
+        self.Ftransfer.prolong(self.F_coarse[key], self.F_fine[key])
         # fine solver produces u_fine from F_fine
         self.fine_solver[key].solve()
         # copy u_fine into fine

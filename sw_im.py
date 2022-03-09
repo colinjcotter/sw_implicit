@@ -12,7 +12,7 @@ parser.add_argument('--dumpt', type=float, default=24, help='Dump time in hours.
 parser.add_argument('--gamma', type=float, default=1.0e5, help='Augmented Lagrangian scaling parameter. Default 10000.')
 parser.add_argument('--dt', type=float, default=1, help='Timestep in hours. Default 1.')
 parser.add_argument('--filename', type=str, default='w5aug')
-parser.add_argument('--coords_degree', type=int, default=1, help='Degree of polynomials for sphere mesh approximation.')
+parser.add_argument('--coords_degree', type=int, default=3, help='Degree of polynomials for sphere mesh approximation.')
 parser.add_argument('--degree', type=int, default=1, help='Degree of finite element space (the DG space).')
 parser.add_argument('--kspschur', type=int, default=40, help='Max number of KSP iterations on the Schur complement. Default 40.')
 parser.add_argument('--kspmg', type=int, default=5, help='Max number of KSP iterations in the MG levels. Default 5.')
@@ -403,9 +403,10 @@ nsolver = fd.NonlinearVariationalSolver(nprob,
                                         solver_parameters=sparameters,
                                         appctx=ctx)
 vtransfer = mg.SWTransfer(Unp1)
+tm = fd.TransferManager()
 transfers = {
-    V1.ufl_element(): (fd.prolong, fd.restrict, fd.inject),
-    V2.ufl_element(): (fd.prolong, fd.restrict, fd.inject)
+    V1.ufl_element(): (vtransfer.prolong, tm.restrict, tm.inject),
+    V2.ufl_element(): (tm.prolong, tm.restrict, tm.inject)
 }
 transfermanager = fd.TransferManager(native_transfers=transfers)
 nsolver.set_transfer_manager(transfermanager)
