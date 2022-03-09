@@ -6,10 +6,11 @@ mesh = PeriodicUnitSquareMesh(20,20)
 degree = 2
 BDM = FiniteElement("BDM", triangle, degree, variant="integral")
 V1 = FunctionSpace(mesh, BDM)
+V1b = FunctionSpace(mesh, BrokenElement(BDM))
 V2 = FunctionSpace(mesh, "DG", degree-1)
-Tr = FunctionSpace(mesh, "HDiv Trace", degree)
 bNed = BrokenElement(FiniteElement("N1curl", triangle,
                                    degree-1, variant="integral"))
+Tr = FunctionSpace(mesh, "HDivT", degree)
 U = FunctionSpace(mesh, bNed)
 
 hbar = Function(V2)
@@ -25,24 +26,40 @@ hup = Upwind('+')*hbar('+') + Upwind('-')*hbar('-')
 u0 = Function(V1, name="u0")
 u0.interpolate(as_vector([-sin(pi*x)*cos(pi*y),
                            cos(pi*x)*sin(pi*y)]))
-W = Tr * U
+W = V1b * U * Tr
 
-gamma, w = TestFunctions(W)
-F = TrialFunction(V1)
+def both(e):
+    return e('+')+e('-')
 
-a = gamma('+')*inner(F('+'), n('+'))*dS + \
-    gamma*inner(F, n)*ds
-a += inner(w, F)*dx
-L = gamma('+')*inner(u0('+'), n('+'))*hup*dS
-L += inner(hbar*w, u0)*dx
+w, r, gamma = TestFunctions(W)
+F, v, lambda0 = TrialFunctions(W)
+a = both(inner(w, n)*inner(F, n))*dS
+a += inner(w, n)*inner(F, n)*ds
+a += inner(w, v)*dx
+a += inner(F, r)*dx
+a += jump(w, n)*lambda0('+')*dS
+a += inner(w, n)*lambda0*ds
+a += jump(F, n)*gamma('+')*dS
+a += inner(F, n)*gamma*ds
 
-F0 = Function(V1, name="F0")
-myprob = LinearVariationalProblem(a, L, F0)
+L = both(inner(w, n)*inner(u0, n))*hup*dS
+L += inner(w, n)*inner(u0*hbar, n)*ds
+L += inner(u0*hbar, r)*dx
+
+w0 = Function(W)
+myprob = LinearVariationalProblem(a, L, w0)
 solver_parameters={
-    "mat_type":"aij",
+    "mat_type":"matfree",
     "ksp_type":"preonly",
-    "pc_type":"lu",
-    "pc_factor_mat_solver_type" : "mumps"}
+    'pmat_type':'matfree',
+    'pc_type':'python',
+    'pc_python_type':'firedrake.SCPC',
+    'pc_sc_eliminate_fields': '0, 1',
+    'condensed_field': {'ksp_type': 'gmres',
+                        'ksp_monitor': None,
+                        'ksp_converged_reason': None,
+                        'pc_type': 'ilu'}}
+
 
 mysolver = LinearVariationalSolver(myprob,
                                    solver_parameters=solver_parameters)
@@ -55,6 +72,8 @@ hform = (
     -inner(grad(phi), ubar*hbar)*dx
     + (phi('+') - phi('-'))*(un('+')*hbar('+') - un('-')*hbar('-'))*dS
 )
+
+F0, v0 = wo.split()
 
 Ftest = phi*div(F0)*dx - action(derivative(hform, ubar), u0)
 

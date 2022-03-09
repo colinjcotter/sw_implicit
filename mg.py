@@ -136,6 +136,7 @@ class SWTransfer(object):
         # copy coarse into the input to the coarse solver
         self.u_coarse[key].assign(coarse)
         # coarse solver produces F_coarse
+        print("key", key)
         self.coarse_solver[key].solve()
         # standard transfer preserves divergence-free subspaces
         self.Ftransfer.prolong(self.F_coarse[key], self.F_fine[key])
