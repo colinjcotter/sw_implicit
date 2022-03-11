@@ -20,6 +20,7 @@ parser.add_argument('--tlblock', type=str, default='mg', help='Solver for the ve
 parser.add_argument('--schurpc', type=str, default='mass', help='Preconditioner for the Schur complement. mass==mass inverse, helmholtz==helmholtz inverse * laplace * mass inverse. Default is mass')
 parser.add_argument('--show_args', action='store_true', help='Output all the arguments.')
 parser.add_argument('--time_scheme', type=int, default=0, help='Timestepping scheme. 0=Crank-Nicholson. 1=Implicit midpoint rule.')
+parser.add_argument('--fancy_transfers', action='store_true', help='Use the commuting transfers for the DG div(Hu) operator.')
 args = parser.parse_known_args()
 args = args[0]
 
@@ -421,14 +422,15 @@ ctx = {"mu": g*dt/gamma/2}
 nsolver = fd.NonlinearVariationalSolver(nprob,
                                         solver_parameters=sparameters,
                                         appctx=ctx)
-vtransfer = mg.SWTransfer(Unp1)
-tm = fd.TransferManager()
-transfers = {
-    V1.ufl_element(): (vtransfer.prolong, tm.restrict, tm.inject),
-    V2.ufl_element(): (tm.prolong, tm.restrict, tm.inject)
-}
-transfermanager = fd.TransferManager(native_transfers=transfers)
-nsolver.set_transfer_manager(transfermanager)
+if args.fancy_transfers:
+    vtransfer = mg.SWTransfer(Unp1)
+    tm = fd.TransferManager()
+    transfers = {
+        V1.ufl_element(): (vtransfer.prolong, tm.restrict, tm.inject),
+        V2.ufl_element(): (tm.prolong, tm.restrict, tm.inject)
+    }
+    transfermanager = fd.TransferManager(native_transfers=transfers)
+    nsolver.set_transfer_manager(transfermanager)
 dmax = args.dmax
 hmax = 24*dmax
 tmax = 60.*60.*hmax
