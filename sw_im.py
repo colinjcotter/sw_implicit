@@ -1,8 +1,8 @@
 import firedrake as fd
 #get command arguments
 from petsc4py import PETSc
-import mg
 PETSc.Sys.popErrorHandler()
+import mg
 import argparse
 parser = argparse.ArgumentParser(description='Williamson 5 testcase for augmented Lagrangian solver.')
 parser.add_argument('--base_level', type=int, default=1, help='Base refinement level of icosahedral grid for MG solve. Default 1.')

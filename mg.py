@@ -5,7 +5,7 @@ def both(e):
     return e('+')+e('-')
 
 class SWTransfer(object):
-    def __init__(self, w0):
+    def __init__(self, w0, upwind=True, transfer_coordinates=None):
         '''
         Object to manage transfer operators for MG
         applied to augmented Lagrangian solver
@@ -13,7 +13,9 @@ class SWTransfer(object):
         Assumes BDM spaces.
 
         :arg w0: A Firedrake function containing the 
-        current value of the state of the 
+        current value of the state of the nonlinear solver
+        :arg upwind: True for using upwind values of delta h using ubar
+        otherwise use the average.
         '''
         self.w0 = w0
         self.ubar, self.hbar = w0.split()
@@ -21,7 +23,8 @@ class SWTransfer(object):
         self.V = FunctionSpace(mesh,
                                self.ubar.function_space().ufl_element())
         self.degree = self.ubar.function_space().ufl_element().degree()
-
+        self.upwind = upwind
+        
         # list of flags to say if we've set up before
         self.ready = {}
         # list of coarse and fine fluxes
@@ -43,14 +46,19 @@ class SWTransfer(object):
         self.Ftransfer = TransferManager()
         self.coarse_average_kernel = {}
         self.fine_average_kernel = {}
-
+        self.finest_transfer_coordinates = transfer_coordinates
+        self.transfer_coordinates_coarse = {}
+        self.transfer_coordinates_fine = {}
+        self.coordinates_coarse = {}
+        self.coordinates_fine = {}
+        
     def prolong(self, coarse, fine):
         Vfine = FunctionSpace(fine.ufl_domain(),
                               fine.function_space().ufl_element())
         key = Vfine.dim()
-
+        keymax = self.V.dim()
         firsttime = self.ready.get(key, None) is None
-
+        
         if firsttime:
             self.ready[key] = True
             coarse_mesh = coarse.ufl_domain()
@@ -59,6 +67,7 @@ class SWTransfer(object):
             Vcoarseb = FunctionSpace(coarse_mesh,
                                      BrokenElement(coarse_element))
             degree = self.degree
+            VcoarseDG = VectorFunctionSpace(coarse_mesh, "DG", degree-1)
             
             # make a solver du -> F (on coarse mesh)
             bNed = BrokenElement(FiniteElement("N1curl", triangle,
@@ -74,12 +83,16 @@ class SWTransfer(object):
             ubar_coarse = self.ubar_coarse[key]
             self.w_coarse_b[key] = Function(Wcoarse)
             self.F_coarse_b[key], _ = self.w_coarse_b[key].split()
+            self.F_coarse_DG[key] = Function(VcoarseDG)
             self.F_coarse[key] = Function(Vcoarse)
             self.u_coarse[key] = Function(Vcoarse)
             n = FacetNormal(coarse_mesh)
-            Upwind = 0.5 * (sign(dot(ubar_coarse, n)) + 1)
-            hup = Upwind('+')*hbar_coarse('+') + \
-                Upwind('-')*hbar_coarse('-')
+            if self.upwind:
+                Upwind = Constant(0.5) * (sign(dot(ubar_coarse, n)) + 1)
+                hup = Upwind('+')*hbar_coarse('+') + \
+                    Upwind('-')*hbar_coarse('-')
+            else:
+                hup = Constant(0.5)*(hbar_coarse('+') + hbar_coarse('-'))
 
             w, r = TestFunctions(Wcoarse)
             F, v = TrialFunctions(Wcoarse)
@@ -132,6 +145,7 @@ class SWTransfer(object):
             Vfineb = FunctionSpace(fine_mesh,
                                      BrokenElement(fine_element))
             degree = self.degree
+            VfineDG = VectorFunctionSpace(fine_mesh, "DG", degree-1)
 
             bNed = BrokenElement(FiniteElement("N1curl", triangle,
                                                degree-1, variant="integral"))
@@ -145,6 +159,7 @@ class SWTransfer(object):
             self.w_fine_b[key] = Function(Wfine)
             self.u_fine_b[key], _ = self.w_fine_b[key].split()
             self.F_fine[key] = Function(Vfine)
+            self.F_fine_DG[key] = Function(VfineDG)
             hbar_fine = self.hbar_fine[key]
             ubar_fine = self.ubar_fine[key]
             n = FacetNormal(fine_mesh)
@@ -160,7 +175,7 @@ class SWTransfer(object):
             a += inner(w, v)*hbar_fine*dx
             a += inner(u, r)*hbar_fine*dx
 
-            F0 = self.F_fine[key]
+            F0 = self.F_fine_DG[key]
             L = both(inner(w, n)*inner(F0, n))*dS
             L += inner(w, n)*inner(F0, n)*ds
             L += inner(F0, r)*dx
@@ -190,7 +205,26 @@ class SWTransfer(object):
             end
             """
             self.fine_average_kernel[key] = (domain, instructions)
-            
+
+            if self.finest_transfer_coordinates:
+                CoordinateElement = coarse_mesh.coordinates.ufl_element()
+                print(coarse_mesh, CoordinateElement)
+                tcc = Function(FunctionSpace(coarse_mesh, CoordinateElement))
+                self.transfer_coordinates_coarse[key] = tcc
+                tcf = Function(FunctionSpace(fine_mesh, CoordinateElement))
+                self.transfer_coordinates_fine[key] = tcf
+                if key < keymax:
+                    self.Ftransfer.inject(self.finest_transfer_coordinates,
+                                          tcf)
+                else:
+                    tcf.assign(self.finest_transfer_coordinates)
+                self.Ftransfer.inject(self.finest_transfer_coordinates, tcc)
+                cc = Function(coarse_mesh.coordinates)
+                cf = Function(fine_mesh.coordinates)
+                self.coordinates_coarse[key] = cc
+                self.coordinates_fine[key] = cf
+
+
         # update ubar and ubar on the levels
         keymax = max(list(self.ubar_fine.keys()))
         if keymax > key:
@@ -208,14 +242,25 @@ class SWTransfer(object):
         # coarse solver produces w_coarse_b
         # This should be replaced with Slate
         self.coarse_solver[key].solve()
-        self.F_coarse[key].assign(0.)
-        par_loop(self.coarse_average_kernel[key], dx,
-                 {"w": (self.coarse_weight[key], READ),
-                  "vec_in": (self.F_coarse_b[key], READ),
-                  "vec_out": (self.F_coarse[key], INC)},
-                 is_loopy_kernel=True)
+
+        if self.finest_transfer_coordinates:
+            #change to the transfer coordinates for prolongation
+            #e.g. if the mesh hierarchy is deformed to sphere
+            self.F_coarse[key].ufl_domain().coordinates.assign(
+                self.transfer_coordinates_coarse[key])
+            self.F_fine[key].ufl_domain().coordinates.assign(
+                self.transfer_coordinates_fine[key])
         # standard transfer preserves divergence-free subspaces
-        self.Ftransfer.prolong(self.F_coarse[key], self.F_fine[key])
+        self.F_coarse_DG[key].interpolate(self.F_coarse[key])
+        self.Ftransfer.prolong(self.F_coarse_DG[key],
+                               self.F_fine_DG[key])
+        if self.finest_transfer_coordinates:
+            #change back to deformed mesh
+            self.F_coarse[key].ufl_domain().coordinates.assign(
+                self.coordinates_coarse[key])
+            self.F_fine[key].ufl_domain().coordinates.assign(
+                self.coordinates_fine[key])
+
         # fine solver produces w_fine_b from F_fine
         self.fine_solver[key].solve()
         fine.assign(0.)
