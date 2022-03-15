@@ -1,31 +1,48 @@
 from firedrake import *
-
-import argparse
-parser = argparse.ArgumentParser(description='Grad-Div Helmholtz solver in the plane.')
-parser.add_argument('--base_level', type=int, default=3, help='Base refinement level of square grid for MG solve. Default 3.')
-parser.add_argument('--ref_level', type=int, default=4, help='Refinement level of square grid. Default 4.')
-parser.add_argument('--gamma', type=float, default=1.0e5, help='Augmented Lagrangian scaling parameter. Default 10000.')
-parser.add_argument('--show_args', action='store_true', help='Output all the arguments.')
-args = parser.parse_known_args()
-args = args[0]
-
+R0 = 1
+base_level = 2
+ref_level = 5
+nrefs = ref_level - base_level
+deg = 2
 distribution_parameters = {"partition": True, "overlap_type": (DistributedMeshOverlapType.VERTEX, 2)}
 #distribution_parameters = {"partition": True, "overlap_type": (DistributedMeshOverlapType.FACET, 2)}
 
-nbase = args.base_level
-nrefs = args.ref_level
-basemesh = UnitSquareMesh(nbase, nbase)
+
+def high_order_mesh_hierarchy(mh, degree, R0):
+    meshes = []
+    for m in mh:
+        X = VectorFunctionSpace(m, "Lagrange", degree)
+        new_coords = interpolate(m.coordinates, X)
+        x, y, z = new_coords
+        r = (x**2 + y**2 + z**2)**0.5
+        new_coords.assign(R0*new_coords/r)
+        new_mesh = Mesh(new_coords)
+        meshes.append(new_mesh)
+
+    return HierarchyBase(meshes, mh.coarse_to_fine_cells,
+                            mh.fine_to_coarse_cells,
+                            mh.refinements_per_level, mh.nested)
+
+basemesh = IcosahedralSphereMesh(radius=R0,
+                                 refinement_level=base_level,
+                                 degree=1,
+                                 distribution_parameters = distribution_parameters)
 mh = MeshHierarchy(basemesh, nrefs)
+mh = high_order_mesh_hierarchy(mh, deg, R0)
+for mesh in mh:
+    x = SpatialCoordinate(mesh)
+    mesh.init_cell_orientations(x)
 mesh = mh[-1]
 
+R0 = Constant(R0)
 V = FunctionSpace(mesh, "BDM", 2)
 
 v = TestFunction(V)
 u = TrialFunction(V)
 
-gamma = Constant(args.gamma)
-x, y = SpatialCoordinate(mesh)
-f = exp(- ((x-0.5)**2 + (y-0.5)**2)/0.2**2) + conditional(y<0.5, 0, 1) 
+gamma = Constant(1.0e5)
+x, y, z = SpatialCoordinate(mesh)
+f = exp(- (x**2 + z**2)/0.2**2) + conditional(z<0, 0, 1) 
 a = inner(u, v)*dx + gamma*div(u)*div(v)*dx
 L = v[0]*f*dx
 
