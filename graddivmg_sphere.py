@@ -27,12 +27,13 @@ basemesh = IcosahedralSphereMesh(radius=R0,
                                  refinement_level=base_level,
                                  degree=1,
                                  distribution_parameters = distribution_parameters)
+del basemesh._radius
 mh = MeshHierarchy(basemesh, nrefs)
 #creates higher order mesh hierarchy on icosahedron
 mh = high_order_mesh_hierarchy(mh, deg, R0)
 mesh = mh[-1]
 # store the mesh coordinates on the icosahedron before we overwrite them
-transfer_coordinates = Function(mesh.coordinates)
+transfer_coordinates = Function(mh[0].coordinates)
 
 # push the coordinates out to the sphere and orient the cells
 for mesh in mh:
@@ -49,7 +50,7 @@ V = FunctionSpace(mesh, "BDM", 2)
 v = TestFunction(V)
 u = TrialFunction(V)
 
-gamma = Constant(1.0)
+gamma = Constant(1.0e5)
 x, y, z = SpatialCoordinate(mesh)
 f = exp(- (x**2 + z**2)/0.2**2) + conditional(z<0, 0, 1) 
 a = inner(u, v)*dx + gamma*div(u)*div(v)*dx
@@ -101,6 +102,7 @@ transfers = {
     V.ufl_element(): (vtransfer.prolong, tm.restrict, tm.inject)
 }
 transfermanager = TransferManager(native_transfers=transfers)
-#mysolver.set_transfer_manager(transfermanager)
+mysolver.set_transfer_manager(transfermanager)
 
 mysolver.solve()
+
