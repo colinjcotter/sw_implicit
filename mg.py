@@ -5,7 +5,7 @@ def both(e):
     return e('+')+e('-')
 
 class SWTransfer(object):
-    def __init__(self, w0, upwind=True, transfer_coordinates=None):
+    def __init__(self, w0, upwind=True):
         '''
         Object to manage transfer operators for MG
         applied to augmented Lagrangian solver
@@ -16,8 +16,6 @@ class SWTransfer(object):
         current value of the state of the nonlinear solver
         :arg upwind: True for using upwind values of delta h using ubar
         otherwise use the average.
-        :arg transfer_coordinates: A function containing the transfer
-        coordinates on the coarsest mesh
         '''
         self.w0 = w0
         self.ubar, self.hbar = w0.split()
@@ -32,6 +30,7 @@ class SWTransfer(object):
         # list of coarse and fine fluxes
         self.w_coarse_b = {} #broken mixed variable for F coarse
         self.F_coarse_b = {} #pointer to the F part of the above
+        self.F_fine_b = {} #broken variable for F fine
         self.coarse_weight = {} #averaging weight
         self.F_coarse = {}
         self.F_coarse_DG = {}
@@ -50,11 +49,6 @@ class SWTransfer(object):
         self.Ftransfer = TransferManager()
         self.coarse_average_kernel = {}
         self.fine_average_kernel = {}
-        self.coarsest_transfer_coordinates = transfer_coordinates
-        self.transfer_coordinates_coarse = {}
-        self.transfer_coordinates_fine = {}
-        self.coordinates_coarse = {}
-        self.coordinates_fine = {}
         
     def prolong(self, coarse, fine):
         Vfine = FunctionSpace(fine.ufl_domain(),
@@ -162,6 +156,7 @@ class SWTransfer(object):
             self.w_fine_b[key] = Function(Wfine)
             self.u_fine_b[key], _ = self.w_fine_b[key].split()
             self.F_fine[key] = Function(Vfine)
+            self.F_fine_b[key] = Function(Vfineb)
             self.F_fine_DG[key] = Function(VfineDG)
             hbar_fine = self.hbar_fine[key]
             ubar_fine = self.ubar_fine[key]
@@ -181,7 +176,7 @@ class SWTransfer(object):
             a += inner(w, v)*hbar_fine*dx
             a += inner(u, r)*hbar_fine*dx
 
-            F0 = self.F_fine_DG[key]
+            F0 = self.F_fine[key]
             L = both(inner(w, n)*inner(F0, n))*dS
             L += inner(w, n)*inner(F0, n)*ds
             L += inner(F0, r)*dx
@@ -212,22 +207,11 @@ class SWTransfer(object):
             """
             self.fine_average_kernel[key] = (domain, instructions)
 
-            if self.coarsest_transfer_coordinates:
-                CoordinateElement = coarse_mesh.coordinates.ufl_element()
-                tcc = Function(FunctionSpace(coarse_mesh, CoordinateElement))
-                self.transfer_coordinates_coarse[key] = tcc
-                tcf = Function(FunctionSpace(fine_mesh, CoordinateElement))
-                self.transfer_coordinates_fine[key] = tcf
-                prolong(self.coarsest_transfer_coordinates, tcf)
-                try:
-                    prolong(self.coarsest_transfer_coordinates, tcc)
-                except ValueError:
-                    tcc.assign(self.coarsest_transfer_coordinates)
-
-                cc = Function(coarse_mesh.coordinates)
-                cf = Function(fine_mesh.coordinates)
-                self.coordinates_coarse[key] = cc
-                self.coordinates_fine[key] = cf
+            if hasattr(coarse_mesh, "transfer_coordinates"):
+                if not hasattr(coarse_mesh, "coordinates_bk"):
+                    coarse_mesh.coordinates_bk = Function(coarse_mesh.coordinates)
+                if not hasattr(fine_mesh, "coordinates_bk"):
+                    fine_mesh.coordinates_bk = Function(fine_mesh.coordinates)
                 
         # update ubar and hbar on the levels
         keymax = max(list(self.ubar_fine.keys()))
@@ -241,40 +225,63 @@ class SWTransfer(object):
         else:
             self.hbar_fine[key].assign(self.hbar)
         self.Ftransfer.inject(self.hbar, self.hbar_coarse[key])
+
         # copy coarse into the input to the coarse solver
         self.u_coarse[key].assign(coarse)
+
         # coarse solver produces w_coarse_b
         # This should be replaced with Slate
         self.coarse_solver[key].solve()
-        if self.coarsest_transfer_coordinates:
-            #change to the transfer coordinates for prolongation
-            #e.g. if the mesh hierarchy is deformed to sphere
+
+        print("fix me")
+        self.F_coarse[key].assign(coarse)
+
+        #move the mesh
+        if hasattr(self.F_coarse[key].ufl_domain(), "transfer_coordinates"):
+            # change to the transfer coordinates for prolongation
+            # e.g. if the mesh hierarchy is deformed to sphere
             self.F_coarse[key].ufl_domain().coordinates.assign(
-                self.transfer_coordinates_coarse[key])
+                self.F_coarse[key].ufl_domain().transfer_coordinates)
             self.F_fine[key].ufl_domain().coordinates.assign(
-                self.transfer_coordinates_fine[key])
+                self.F_fine[key].ufl_domain().transfer_coordinates)
 
-            coarse_mesh.coordinates.assign(self.transfer_coordinates_coarse[key])
-            fine_mesh.coordinates.assign(self.transfer_coordinates_fine[key])
-
-        # standard transfer preserves divergence-free subspaces
+        # project F_coarse_b to a vector DG representation
+        # projection solve is block diagonal but we should make a solver here
+        # for speed
         self.F_coarse_DG[key].project(self.F_coarse_b[key])
+        self.F_coarse_DG[key].project(self.F_coarse[key])
+        print("fix me a")
+        # standard transfer preserves divergence-free subspaces
         self.Ftransfer.prolong(self.F_coarse_DG[key],
                                self.F_fine_DG[key])
-
-        if self.coarsest_transfer_coordinates:
-            #change back to deformed mesh
-            self.F_coarse[key].ufl_domain().coordinates.assign(
-                self.coordinates_coarse[key])
-            self.F_fine[key].ufl_domain().coordinates.assign(
-                self.coordinates_fine[key])
-
-        # fine solver produces w_fine_b from F_fine
-        self.fine_solver[key].solve()
-        fine.assign(0.)
-        # average u_fine_b (split from w_fine_b) into fine
+        # project F_fine_DG into F_fine_b on flat mesh
+        # projection solve is block diagonal but we should make a solver here
+        self.F_fine_b[key].project(self.F_fine_DG[key])
+        # average F_fine_b into F_fine
+        self.F_fine[key].assign(0.)
         par_loop(self.fine_average_kernel[key], dx,
                  {"w": (self.fine_weight[key], READ),
-                  "vec_in": (self.u_fine_b[key], READ),
-                  "vec_out": (fine, INC)},
+                  "vec_in": (self.F_fine_b[key], READ),
+                  "vec_out": (self.F_fine[key], INC)},
                 is_loopy_kernel=True)
+
+        #move the mesh back
+        if hasattr(self.F_coarse[key].ufl_domain(), "transfer_coordinates"):
+            #change back to deformed mesh
+            self.F_coarse[key].ufl_domain().coordinates.assign(
+                self.F_coarse[key].ufl_domain().coordinates_bk)
+            self.F_fine[key].ufl_domain().coordinates.assign(
+                self.F_fine[key].ufl_domain().coordinates_bk)
+
+        # fine solver produces w_fine_b from F_fine
+        print("repair me")
+        fine.assign(self.F_fine[key])
+        #self.fine_solver[key].solve()
+        #fine.assign(0.)
+
+        # average u_fine_b (split from w_fine_b) into fine
+        #par_loop(self.fine_average_kernel[key], dx,
+        #         {"w": (self.fine_weight[key], READ),
+        #          "vec_in": (self.u_fine_b[key], READ),
+        #          "vec_out": (fine, INC)},
+        #        is_loopy_kernel=True)

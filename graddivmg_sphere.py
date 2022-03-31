@@ -3,10 +3,10 @@ from petsc4py import PETSc
 PETSc.Sys.popErrorHandler()
 import mg
 R0 = 1
-base_level = 0
+base_level = 2
 ref_level = 5
 nrefs = ref_level - base_level
-deg = 1
+deg = 2
 distribution_parameters = {"partition": True, "overlap_type": (DistributedMeshOverlapType.VERTEX, 2)}
 #distribution_parameters = {"partition": True, "overlap_type": (DistributedMeshOverlapType.FACET, 2)}
 
@@ -29,17 +29,18 @@ basemesh = IcosahedralSphereMesh(radius=R0,
                                  distribution_parameters = distribution_parameters)
 del basemesh._radius
 mh = MeshHierarchy(basemesh, nrefs)
-#creates higher order mesh hierarchy on icosahedron
+# creates higher order mesh hierarchy on icosahedron
+# without pushing coordinates out the the sphere yet
 mh = high_order_mesh_hierarchy(mh, deg, R0)
 mesh = mh[-1]
-# store the mesh coordinates on the icosahedron before we overwrite them
-transfer_coordinates = Function(mh[0].coordinates)
 
+# store the original coordinates on the mesh, then
 # push the coordinates out to the sphere and orient the cells
 for mesh in mh:
+    xf = mesh.coordinates
+    mesh.transfer_coordinates = Function(xf)
     x = SpatialCoordinate(mesh)
-    #r = (x[0]**2 + x[1]**2 + x[2]**2)**0.5
-    #xf = mesh.coordinates
+    r = (x[0]**2 + x[1]**2 + x[2]**2)**0.5
     #xf.interpolate(R0*xf/r)
     mesh.init_cell_orientations(x)
 mesh = mh[-1]
@@ -52,13 +53,17 @@ u = TrialFunction(V)
 
 gamma = Constant(1.0e5)
 x, y, z = SpatialCoordinate(mesh)
+f0 = Function(V)
+import numpy as np
+f0.dat.data[:] = np.random.randn(*(f0.dat.data[:].shape))
 f = exp(- (x**2 + z**2)/0.2**2) + conditional(z<0, 0, 1) 
 a = inner(u, v)*dx + gamma*div(u)*div(v)*dx
-L = v[0]*f*dx
-
+# L = v[0]*f*dx
+L = inner(v, f0)*dx
 kspmg = 3
 sp = {
-    "ksp_type": "gcr",
+    "ksp_type": "fgmres",
+    "ksp_view": None,
     "ksp_monitor": None,
     "pc_type": "mg",
     "mg_coarse_ksp_type": "preonly",
@@ -73,7 +78,7 @@ sp = {
     "mg_levels_patch_pc_patch_save_operators": True,
     "mg_levels_patch_pc_patch_partition_of_unity": False,
     "mg_levels_patch_pc_patch_sub_mat_type": "seqaij",
-    "mg_levels_patch_pc_patch_construct_type": "vanka",
+    "mg_levels_patch_pc_patch_construct_type": "star",
     "mg_levels_patch_pc_patch_multiplicative": False,
     "mg_levels_patch_pc_patch_symmetrise_sweep": False,
     "mg_levels_patch_pc_patch_construct_dim": 0,
@@ -96,7 +101,7 @@ U = Function(W)
 ubar, hbar = U.split()
 ubar.assign(0.)
 hbar.assign(1.0)
-vtransfer = mg.SWTransfer(U, upwind=False, transfer_coordinates=False)
+vtransfer = mg.SWTransfer(U, upwind=False)
 tm = TransferManager()
 transfers = {
     V.ufl_element(): (vtransfer.prolong, tm.restrict, tm.inject)
@@ -104,5 +109,27 @@ transfers = {
 transfermanager = TransferManager(native_transfers=transfers)
 mysolver.set_transfer_manager(transfermanager)
 
-mysolver.solve()
+for level in range(0):
+    Ec = FunctionSpace(mh[-2-level], "CG", 3)
+    Vc = FunctionSpace(mh[-2-level], "BDM", 2)
+    Vf = FunctionSpace(mh[-1-level], "BDM", 2)
+    psi = Function(Ec)
+    psi.dat.data[:] = np.random.randn(*(psi.dat.data[:].shape))
+    
+    outward_normals = CellNormal(mh[-2-level])
 
+    def perp(u):
+        return cross(outward_normals, u)
+
+    wc = Function(Vc)
+    bkup_coords = Function(mh[-2-level].coordinates)
+    mh[-2].coordinates.assign(mh[-2-level].transfer_coordinates)
+    wc.project(perp(grad(psi)))
+    mh[-2].coordinates.assign(bkup_coords)
+    
+    wf = Function(Vf)
+    vtransfer.prolong(wc, wf)
+    
+    print(norm(wc), norm(wf), norm(div(wc)), norm(div(wf)))
+
+mysolver.solve()
