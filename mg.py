@@ -46,6 +46,7 @@ class SWTransfer(object):
         self.hbar_fine = {}
         self.coarse_solver = {}
         self.fine_solver = {}
+        #self.Ftransfer = TransferManager(use_averaging=False)
         self.Ftransfer = TransferManager()
         self.coarse_average_kernel = {}
         self.fine_average_kernel = {}
@@ -231,7 +232,7 @@ class SWTransfer(object):
 
         # coarse solver produces w_coarse_b
         # This should be replaced with Slate
-        self.coarse_solver[key].solve()
+        #self.coarse_solver[key].solve()
 
         print("fix me")
         self.F_coarse[key].assign(coarse)
@@ -285,3 +286,110 @@ class SWTransfer(object):
         #          "vec_in": (self.u_fine_b[key], READ),
         #          "vec_out": (fine, INC)},
         #        is_loopy_kernel=True)
+
+
+class ManifoldTransfer(object):
+    def __init__(self):
+        '''
+        Object to manage transfer operators for MG
+        where we pull back to a piecewise flat mesh
+        before doing transfers
+        '''
+        
+        # list of flags to say if we've set up before
+        self.ready = {}
+        self.Ftransfer = TransferManager()
+        
+    def prolong(self, coarse, fine):
+        Vfine = FunctionSpace(fine.ufl_domain(),
+                              fine.function_space().ufl_element())
+        key = Vfine.dim()
+
+        firsttime = self.ready.get(key, None) is None
+        if firsttime:
+            self.ready[key] = True
+
+            coarse_mesh = coarse.ufl_domain()
+            fine_mesh = fine.ufl_domain()
+            if not hasattr(coarse_mesh, "coordinates_bk"):
+                coarse_mesh.coordinates_bk = Function(coarse_mesh.coordinates)
+            if not hasattr(fine_mesh, "coordinates_bk"):
+                fine_mesh.coordinates_bk = Function(fine_mesh.coordinates)
+
+        # change to the transfer coordinates for prolongation
+        coarse.ufl_domain().coordinates.assign(
+            coarse.ufl_domain().transfer_coordinates)
+        fine.ufl_domain().coordinates.assign(
+            fine.ufl_domain().transfer_coordinates)
+
+        # standard transfer preserves divergence-free subspaces
+        self.Ftransfer.prolong(coarse, fine)
+
+        #change back to deformed mesh
+        coarse.ufl_domain().coordinates.assign(
+            coarse.ufl_domain().coordinates_bk)
+        fine.ufl_domain().coordinates.assign(
+            fine.ufl_domain().coordinates_bk)
+
+
+    def restrict(self, fine, coarse):
+        Vfine = FunctionSpace(fine.ufl_domain(),
+                              fine.function_space().ufl_element())
+        key = Vfine.dim()
+
+        firsttime = self.ready.get(key, None) is None
+        if firsttime:
+            self.ready[key] = True
+
+            coarse_mesh = coarse.ufl_domain()
+            fine_mesh = fine.ufl_domain()
+            if not hasattr(coarse_mesh, "coordinates_bk"):
+                coarse_mesh.coordinates_bk = Function(coarse_mesh.coordinates)
+            if not hasattr(fine_mesh, "coordinates_bk"):
+                fine_mesh.coordinates_bk = Function(fine_mesh.coordinates)
+
+        # change to the transfer coordinates for prolongation
+        coarse.ufl_domain().coordinates.assign(
+            coarse.ufl_domain().transfer_coordinates)
+        fine.ufl_domain().coordinates.assign(
+            fine.ufl_domain().transfer_coordinates)
+
+        # standard transfer preserves divergence-free subspaces
+        self.Ftransfer.restrict(fine, coarse)
+
+        #change back to deformed mesh
+        coarse.ufl_domain().coordinates.assign(
+            coarse.ufl_domain().coordinates_bk)
+        fine.ufl_domain().coordinates.assign(
+            fine.ufl_domain().coordinates_bk)
+
+    def inject(self, fine, coarse):
+        Vfine = FunctionSpace(fine.ufl_domain(),
+                              fine.function_space().ufl_element())
+        key = Vfine.dim()
+
+        firsttime = self.ready.get(key, None) is None
+        if firsttime:
+            self.ready[key] = True
+
+            coarse_mesh = coarse.ufl_domain()
+            fine_mesh = fine.ufl_domain()
+            if not hasattr(coarse_mesh, "coordinates_bk"):
+                coarse_mesh.coordinates_bk = Function(coarse_mesh.coordinates)
+            if not hasattr(fine_mesh, "coordinates_bk"):
+                fine_mesh.coordinates_bk = Function(fine_mesh.coordinates)
+
+        # change to the transfer coordinates for prolongation
+        coarse.ufl_domain().coordinates.assign(
+            coarse.ufl_domain().transfer_coordinates)
+        fine.ufl_domain().coordinates.assign(
+            fine.ufl_domain().transfer_coordinates)
+
+        # standard transfer preserves divergence-free subspaces
+        self.Ftransfer.inject(fine, coarse)
+
+        #change back to deformed mesh
+        coarse.ufl_domain().coordinates.assign(
+            coarse.ufl_domain().coordinates_bk)
+        fine.ufl_domain().coordinates.assign(
+            fine.ufl_domain().coordinates_bk)

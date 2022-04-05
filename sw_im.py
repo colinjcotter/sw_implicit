@@ -15,7 +15,7 @@ parser.add_argument('--filename', type=str, default='w5aug')
 parser.add_argument('--coords_degree', type=int, default=3, help='Degree of polynomials for sphere mesh approximation.')
 parser.add_argument('--degree', type=int, default=2, help='Degree of finite element space (the DG space).')
 parser.add_argument('--kspschur', type=int, default=40, help='Max number of KSP iterations on the Schur complement. Default 40.')
-parser.add_argument('--kspmg', type=int, default=5, help='Max number of KSP iterations in the MG levels. Default 5.')
+parser.add_argument('--kspmg', type=int, default=3, help='Max number of KSP iterations in the MG levels. Default 3.')
 parser.add_argument('--tlblock', type=str, default='mg', help='Solver for the velocity-velocity block. mg==Multigrid with patchPC, lu==direct solver with MUMPS, patch==just do a patch smoother. Default is mg')
 parser.add_argument('--schurpc', type=str, default='mass', help='Preconditioner for the Schur complement. mass==mass inverse, helmholtz==helmholtz inverse * laplace * mass inverse. Default is mass')
 parser.add_argument('--show_args', action='store_true', help='Output all the arguments.')
@@ -58,10 +58,15 @@ if args.tlblock == "mg":
                                         refinement_level=base_level,
                                         degree=1,
                                         distribution_parameters = distribution_parameters)
+    del basemesh._radius
     mh = fd.MeshHierarchy(basemesh, nrefs)
     mh = high_order_mesh_hierarchy(mh, deg, R0)
     for mesh in mh:
+        xf = mesh.coordinates
+        mesh.transfer_coordinates = fd.Function(xf)
         x = fd.SpatialCoordinate(mesh)
+        r = (x[0]**2 + x[1]**2 + x[2]**2)**0.5
+        xf.interpolate(R0*xf/r)
         mesh.init_cell_orientations(x)
     mesh = mh[-1]
 else:
@@ -99,6 +104,8 @@ gamma = fd.Constant(gamma0)
 
 # D = eta + b
 
+One = fd.Function(V2).assign(1.0)
+
 u, eta = fd.TrialFunctions(W)
 v, phi = fd.TestFunctions(W)
 
@@ -119,69 +126,56 @@ def both(u):
 dT = fd.Constant(0.)
 dS = fd.dS
 
+
+def u_op(v, u, h):
+    Upwind = 0.5 * (fd.sign(fd.dot(u, n)) + 1)
+    K = 0.5*fd.inner(u, u)
+    return (fd.inner(v, f*perp(u))*dx
+            - fd.inner(perp(fd.grad(fd.inner(v, perp(u)))), u)*dx
+            + fd.inner(both(perp(n)*fd.inner(v, perp(u))),
+                          both(Upwind*u))*dS
+            - fd.div(v)*(g*(h + b) + K)*dx)
+  #return (- fd.div(v)*g*dx)
+
+
+def h_op(phi, u, h):
+    uup = 0.5 * (fd.dot(u, n) + abs(fd.dot(u, n)))
+    return (- fd.inner(fd.grad(phi), u)*h*dx
+            + fd.jump(phi)*(uup('+')*h('+')
+                            - uup('-')*h('-'))*dS)
+    #return H*phi*fd.div(u)*fd.dx
+
+
 if args.time_scheme == 1:
     "implicit midpoint rule"
     uh = 0.5*(u0 + u1)
     hh = 0.5*(h0 + h1)
-    Upwind = 0.5 * (fd.sign(fd.dot(uh, n)) + 1)
-    K = 0.5*fd.inner(uh, uh)
-    uup = 0.5 * (fd.dot(uh, n) + abs(fd.dot(uh, n)))
 
     eqn = (
-        fd.inner(v, u1 - u0)*dx + dT*fd.inner(v, f*perp(uh))*dx
-        - dT*fd.inner(perp(fd.grad(fd.inner(v, perp(uh)))), uh)*dx
-        + dT*fd.inner(both(perp(n)*fd.inner(v, perp(uh))),
-                      both(Upwind*uh))*dS
-        - dT*fd.div(v)*(g*(hh + b) + K)*dx
+        fd.inner(v, u1 - u0)*dx
+        + dT*u_op(v, uh, hh)
         + phi*(h1 - h0)*dx
-        - dT*fd.inner(fd.grad(phi), uh)*hh*dx
-        + dT*fd.jump(phi)*(uup('+')*hh('+')
-                           - uup('-')*hh('-'))*dS
+        + dT*h_op(phi, uh, hh)
         # the extra bit
         + gamma*(fd.div(v)*(h1 - h0)*dx
-                 - dT*fd.inner(fd.grad(fd.div(v)), uh)*hh*dx
-                 + dT*fd.jump(fd.div(v))*(uup('+')*hh('+')
-                                          - uup('-')*hh('-'))*dS)
-        )
+                 + dT*h_op(fd.div(v), uh, hh)
+        ))
 elif args.time_scheme == 0:
     "Crank-Nicholson rule"
     half = fd.Constant(0.5)
 
-    Upwind0 = 0.5 * (fd.sign(fd.dot(u0, n)) + 1)
-    K0 = 0.5*fd.inner(u0, u0)
-    uup0 = 0.5 * (fd.dot(u0, n) + abs(fd.dot(u0, n)))
-    Upwind1 = 0.5 * (fd.sign(fd.dot(u1, n)) + 1)
-    K1 = 0.5*fd.inner(u1, u1)
-    uup1 = 0.5 * (fd.dot(u1, n) + abs(fd.dot(u1, n)))
-
     eqn = (
         fd.inner(v, u1 - u0)*dx
-        + half*dT*fd.inner(v, f*perp(u0))*dx
-        + half*dT*fd.inner(v, f*perp(u1))*dx
-        - half*dT*fd.inner(perp(fd.grad(fd.inner(v, perp(u0)))), u0)*dx
-        - half*dT*fd.inner(perp(fd.grad(fd.inner(v, perp(u1)))), u1)*dx
-        + half*dT*fd.inner(both(perp(n)*fd.inner(v, perp(u0))),
-                           both(Upwind0*u0))*dS
-        + half*dT*fd.inner(both(perp(n)*fd.inner(v, perp(u1))),
-                           both(Upwind1*u1))*dS
-        - half*dT*fd.div(v)*(g*(h0 + b) + K0)*dx
-        - half*dT*fd.div(v)*(g*(h1 + b) + K1)*dx
+        + half*dT*u_op(v, u0, h0)
+        + half*dT*u_op(v, u1, h1)
         + phi*(h1 - h0)*dx
-        - half*dT*fd.inner(fd.grad(phi), u0)*h0*dx
-        - half*dT*fd.inner(fd.grad(phi), u1)*h1*dx
-        + half*dT*fd.jump(phi)*(uup0('+')*h0('+')
-                                - uup0('-')*h0('-'))*dS
-        + half*dT*fd.jump(phi)*(uup1('+')*h1('+')
-                                - uup1('-')*h1('-'))*dS
+        + half*dT*h_op(phi, u0, h0)
+        + half*dT*h_op(phi, u1, h1)
         # the extra bit
         + gamma*(fd.div(v)*(h1 - h0)*dx
-        - half*dT*fd.inner(fd.grad(fd.div(v)), u0)*h0*dx
-        - half*dT*fd.inner(fd.grad(fd.div(v)), u1)*h1*dx
-        + half*dT*fd.jump(fd.div(v))*(uup0('+')*h0('+')
-                                - uup0('-')*h0('-'))*dS
-        + half*dT*fd.jump(fd.div(v))*(uup1('+')*h1('+')
-                                - uup1('-')*h1('-'))*dS)
-        )    
+                 + half*dT*h_op(fd.div(v), u0, h0)
+                 + half*dT*h_op(fd.div(v), u1, h1))
+        )
 else:
     raise NotImplementedError
     
@@ -202,12 +196,8 @@ sparameters = {
     "mat_type":"matfree",
     'snes_monitor': None,
     "ksp_type": "gcr",
-    #"ksp_gmres_modifiedgramschmidt": None,
+    "ksp_gmres_modifiedgramschmidt": None,
     'ksp_monitor': None,
-    #'snes_converged_reason': None,
-    #'ksp_converged_reason': None,
-    #'ksp_view': None,
-    #"ksp_rtol": 1e-5,
     "pc_type": "fieldsplit",
     "pc_fieldsplit_type": "schur",
     "pc_fieldsplit_schur_fact_type": "full",
@@ -224,7 +214,7 @@ class HelmholtzPC(fd.PCBase):
         mm_solve_parameters = {
             'ksp_type':'preonly',
             'pc_type':'bjacobi',
-            'sub_pc_type':'lu'
+            'sub_pc_type':'lu',
         }
 
         # we assume P has things stuffed inside of it
@@ -244,28 +234,25 @@ class HelmholtzPC(fd.PCBase):
                                        solver_parameters=
                                        mm_solve_parameters)
         # the Helmholtz solve
-        eta = appctx.get("helmholtz_eta", 20)
+        eta0 = appctx.get("helmholtz_eta", 20)
         def get_laplace(q,phi):
             h = fd.avg(fd.CellVolume(mesh))/fd.FacetArea(mesh)
-            mu = eta/h
+            mu = eta0/h
             n = fd.FacetNormal(mesh)
-            ad = (- fd.inner(2 * fd.avg(phi*n),
-                             fd.avg(fd.grad(q)))
-                  - fd.inner(fd.avg(fd.grad(phi)),
-                             2 * fd.avg(q*n))
-                  + mu * fd.inner(2 * fd.avg(phi*n),
-                                  2 * fd.avg(q*n))) * fd.dS
+            ad = (- fd.jump(phi)*fd.jump(fd.inner(fd.grad(q),n))
+                  - fd.jump(q)*fd.jump(fd.inner(fd.grad(phi),n)))*fd.dS
+            ad +=  mu * fd.jump(phi)*fd.jump(q)*fd.dS
             ad += fd.inner(fd.grad(q), fd.grad(phi)) * fd.dx
             return ad
 
         a = (fd.Constant(2)/dT/H)*u*v*fd.dx + fd.Constant(0.5)*g*dT*get_laplace(u, v)
         #input and output functions
         V = u.function_space()
-        self.xfstar = fd.Function(V)
-        self.xf = fd.Function(V)
-        self.yf = fd.Function(V)
-        L = get_laplace(u, self.xf)
-        #L += fd.Constant(0.0e-6)*u*self.xf*fd.dx
+        self.xfstar = fd.Function(V) # the input residual
+        self.xf = fd.Function(V) # the output function from Riesz map
+        self.yf = fd.Function(V) # the preconditioned residual
+
+        L = get_laplace(u, self.xfstar*gamma)
         hh_prob = fd.LinearVariationalProblem(a, L, self.yf)
         self.hh_solver = fd.LinearVariationalSolver(
             hh_prob,
@@ -283,40 +270,38 @@ class HelmholtzPC(fd.PCBase):
         with self.xfstar.dat.vec_wo as v:
             x.copy(v)
         
-        #do the mass solver
+        #do the mass solver, solve(x, b)
         self.Msolver.solve(self.xf, self.xfstar)
 
+        # get the mean
+        xbar = fd.assemble(self.xf*fd.dx)/fd.assemble(One*fd.dx)
+        self.xf -= xbar
+        
         #do the Helmholtz solver
         self.hh_solver.solve()
 
+        # add the mean
+        self.yf += xbar/2*dT*gamma*H
+        
         # copy petsc vec into Function
         with self.yf.dat.vec_ro as v:
             v.copy(y)
 
 bottomright_helm = {
-    "ksp_type": "preonly",
+    "ksp_type": "gmres",
+    #"ksp_monitor": None,
     "ksp_gmres_modifiedgramschmidt": None,
     "ksp_max_it": args.kspschur,
     "pc_type": "python",
     "pc_python_type": "__main__.HelmholtzPC",
     "helmholtz" :
-    {"ksp_type":"gmres",
-     "pc_type": "lu",
-     "pc_mg_type": "full",
-     "mg_levels_ksp_type": "chebyshev",
-     "mg_levels_ksp_max_it": 3,
-     "mg_levels_ksp_chebyshev_esteig": None,
-     "mg_coarse_ksp_type": "preonly",
-     "mg_coarse_pc_type": "python",
-     "mg_coarse_pc_python_type": "firedrake.AssembledPC",
-     "mg_coarse_assembled_pc_type": "lu",
-     "mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
-     "mg_levels_pc_type": "bjacobi",
-     "mg_levels_sub_pc_type": "jacobi"}
+    {"ksp_type":"preonly",
+     "pc_type": "lu"}
 }
 
 bottomright_mass = {
     "ksp_type": "preonly",
+    #"ksp_monitor":None,
     "ksp_gmres_modifiedgramschmidt": None,
     "ksp_max_it": args.kspschur,
     #"ksp_monitor":None,
@@ -343,8 +328,8 @@ topleft_LU = {
 
 topleft_MG = {
     "ksp_type": "preonly",
-    "ksp_max_it": 3,
     "pc_type": "mg",
+    "pc_mg_type": "full",
     "mg_coarse_ksp_type": "preonly",
     "mg_coarse_pc_type": "python",
     "mg_coarse_pc_python_type": "firedrake.AssembledPC",
@@ -422,15 +407,17 @@ ctx = {"mu": g*dt/gamma/2}
 nsolver = fd.NonlinearVariationalSolver(nprob,
                                         solver_parameters=sparameters,
                                         appctx=ctx)
-if args.fancy_transfers:
-    vtransfer = mg.SWTransfer(Unp1)
-    tm = fd.TransferManager()
-    transfers = {
-        V1.ufl_element(): (vtransfer.prolong, tm.restrict, tm.inject),
-        V2.ufl_element(): (tm.prolong, tm.restrict, tm.inject)
-    }
-    transfermanager = fd.TransferManager(native_transfers=transfers)
-    nsolver.set_transfer_manager(transfermanager)
+vtransfer = mg.ManifoldTransfer()
+tm = fd.TransferManager()
+transfers = {
+    V1.ufl_element(): (vtransfer.prolong, vtransfer.restrict,
+                       vtransfer.inject),
+    V2.ufl_element(): (vtransfer.prolong, vtransfer.restrict,
+                       vtransfer.inject)
+}
+transfermanager = fd.TransferManager(native_transfers=transfers)
+nsolver.set_transfer_manager(transfermanager)
+
 dmax = args.dmax
 hmax = 24*dmax
 tmax = 60.*60.*hmax

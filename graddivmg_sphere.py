@@ -3,10 +3,10 @@ from petsc4py import PETSc
 PETSc.Sys.popErrorHandler()
 import mg
 R0 = 1
-base_level = 2
+base_level = 1
 ref_level = 5
 nrefs = ref_level - base_level
-deg = 2
+deg = 1
 distribution_parameters = {"partition": True, "overlap_type": (DistributedMeshOverlapType.VERTEX, 2)}
 #distribution_parameters = {"partition": True, "overlap_type": (DistributedMeshOverlapType.FACET, 2)}
 
@@ -41,7 +41,7 @@ for mesh in mh:
     mesh.transfer_coordinates = Function(xf)
     x = SpatialCoordinate(mesh)
     r = (x[0]**2 + x[1]**2 + x[2]**2)**0.5
-    #xf.interpolate(R0*xf/r)
+    xf.interpolate(R0*xf/r)
     mesh.init_cell_orientations(x)
 mesh = mh[-1]
 
@@ -72,7 +72,7 @@ sp = {
     "mg_coarse_assembled_pc_type": "lu",
     "mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
     "mg_levels_ksp_type": "gmres",
-    "mg_levels_ksp_max_it": kspmg,
+    "mg_levels_ksp_max_it": 3,
     "mg_levels_pc_type": "python",
     "mg_levels_pc_python_type": "firedrake.PatchPC",
     "mg_levels_patch_pc_patch_save_operators": True,
@@ -90,6 +90,27 @@ sp = {
     "mg_levels_patch_sub_pc_type": "lu",
 }
 
+sp_patch = {
+    "ksp_type": "cg",
+    "ksp_view": None,
+    "ksp_monitor": None,
+    "pc_type": "python",
+    "pc_python_type": "firedrake.PatchPC",
+    "patch_pc_patch_save_operators": True,
+    "patch_pc_patch_partition_of_unity": False,
+    "patch_pc_patch_sub_mat_type": "seqaij",
+    "patch_pc_patch_construct_type": "star",
+    "patch_pc_patch_multiplicative": False,
+    "patch_pc_patch_symmetrise_sweep": False,
+    "patch_pc_patch_construct_dim": 0,
+    "patch_pc_patch_sub_mat_type": "seqdense",
+    "patch_pc_patch_dense_inverse": True,
+    "patch_pc_patch_precompute_element_tensors": True,
+    "patch_sub_pc_factor_mat_solver_type": "petsc",
+    "patch_sub_ksp_type": "preonly",
+    "patch_sub_pc_type": "lu",
+}
+
 u0 = Function(V)
 myprob = LinearVariationalProblem(a, L, u0)
 mysolver = LinearVariationalSolver(myprob,
@@ -101,10 +122,10 @@ U = Function(W)
 ubar, hbar = U.split()
 ubar.assign(0.)
 hbar.assign(1.0)
-vtransfer = mg.SWTransfer(U, upwind=False)
+vtransfer = mg.ManifoldTransfer()
 tm = TransferManager()
 transfers = {
-    V.ufl_element(): (vtransfer.prolong, tm.restrict, tm.inject)
+    V.ufl_element(): (vtransfer.prolong, vtransfer.restrict, tm.inject)
 }
 transfermanager = TransferManager(native_transfers=transfers)
 mysolver.set_transfer_manager(transfermanager)
@@ -128,7 +149,8 @@ for level in range(0):
     mh[-2].coordinates.assign(bkup_coords)
     
     wf = Function(Vf)
-    vtransfer.prolong(wc, wf)
+    #vtransfer.prolong(wc, wf)
+    tm.prolong(wc, wf)
     
     print(norm(wc), norm(wf), norm(div(wc)), norm(div(wf)))
 
