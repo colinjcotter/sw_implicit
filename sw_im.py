@@ -135,7 +135,6 @@ def u_op(v, u, h):
             + fd.inner(both(perp(n)*fd.inner(v, perp(u))),
                           both(Upwind*u))*dS
             - fd.div(v)*(g*(h + b) + K)*dx)
-  #return (- fd.div(v)*g*dx)
 
 
 def h_op(phi, u, h):
@@ -143,7 +142,6 @@ def h_op(phi, u, h):
     return (- fd.inner(fd.grad(phi), u)*h*dx
             + fd.jump(phi)*(uup('+')*h('+')
                             - uup('-')*h('-'))*dS)
-    #return H*phi*fd.div(u)*fd.dx
 
 
 if args.time_scheme == 1:
@@ -151,31 +149,33 @@ if args.time_scheme == 1:
     uh = 0.5*(u0 + u1)
     hh = 0.5*(h0 + h1)
 
-    eqn = (
+    testeqn = (
         fd.inner(v, u1 - u0)*dx
         + dT*u_op(v, uh, hh)
         + phi*(h1 - h0)*dx
-        + dT*h_op(phi, uh, hh)
-        # the extra bit
+        + dT*h_op(phi, uh, hh))
+    # the extra bit
+    eqn = testeqn \
         + gamma*(fd.div(v)*(h1 - h0)*dx
-                 + dT*h_op(fd.div(v), uh, hh)
-        ))
+                 + dT*h_op(fd.div(v), uh, hh))
+
+    
 elif args.time_scheme == 0:
     "Crank-Nicholson rule"
     half = fd.Constant(0.5)
 
-    eqn = (
+    testeqn = (
         fd.inner(v, u1 - u0)*dx
         + half*dT*u_op(v, u0, h0)
         + half*dT*u_op(v, u1, h1)
         + phi*(h1 - h0)*dx
         + half*dT*h_op(phi, u0, h0)
-        + half*dT*h_op(phi, u1, h1)
-        # the extra bit
+        + half*dT*h_op(phi, u1, h1))
+    # the extra bit
+    eqn = testeqn \
         + gamma*(fd.div(v)*(h1 - h0)*dx
                  + half*dT*h_op(fd.div(v), u0, h0)
                  + half*dT*h_op(fd.div(v), u1, h1))
-        )
 else:
     raise NotImplementedError
     
@@ -195,12 +195,12 @@ else:
 sparameters = {
     "mat_type":"matfree",
     'snes_monitor': None,
-    "ksp_type": "gcr",
+    "ksp_type": "fgmres",
     "ksp_gmres_modifiedgramschmidt": None,
     'ksp_monitor': None,
     "pc_type": "fieldsplit",
     "pc_fieldsplit_type": "schur",
-    "pc_fieldsplit_schur_fact_type": "full",
+    #"pc_fieldsplit_schur_fact_type": "full",
     "pc_fieldsplit_off_diag_use_amat": True,
 }
 
@@ -252,7 +252,7 @@ class HelmholtzPC(fd.PCBase):
         self.xf = fd.Function(V) # the output function from Riesz map
         self.yf = fd.Function(V) # the preconditioned residual
 
-        L = get_laplace(u, self.xfstar*gamma)
+        L = get_laplace(u, self.xf*gamma)
         hh_prob = fd.LinearVariationalProblem(a, L, self.yf)
         self.hh_solver = fd.LinearVariationalSolver(
             hh_prob,
@@ -288,8 +288,8 @@ class HelmholtzPC(fd.PCBase):
             v.copy(y)
 
 bottomright_helm = {
-    "ksp_type": "gmres",
-    #"ksp_monitor": None,
+    "ksp_type": "fgmres",
+    "ksp_monitor": None,
     "ksp_gmres_modifiedgramschmidt": None,
     "ksp_max_it": args.kspschur,
     "pc_type": "python",
@@ -329,7 +329,7 @@ topleft_LU = {
 topleft_MG = {
     "ksp_type": "preonly",
     "pc_type": "mg",
-    "pc_mg_type": "full",
+    #"pc_mg_type": "full",
     "mg_coarse_ksp_type": "preonly",
     "mg_coarse_pc_type": "python",
     "mg_coarse_pc_python_type": "firedrake.AssembledPC",
@@ -403,7 +403,7 @@ dT.assign(dt)
 t = 0.
 
 nprob = fd.NonlinearVariationalProblem(eqn, Unp1)
-ctx = {"mu": g*dt/gamma/2}
+ctx = {"mu": gamma*2/g/dt}
 nsolver = fd.NonlinearVariationalSolver(nprob,
                                         solver_parameters=sparameters,
                                         appctx=ctx)
@@ -475,7 +475,9 @@ while t < tmax + 0.5*dt:
 
     nsolver.solve()
     Un.assign(Unp1)
-
+    res = fd.assemble(testeqn)
+    PETSc.Sys.Print(res.dat.data[0].max(), res.dat.data[0].min(),
+          res.dat.data[1].max(), res.dat.data[1].min())
     if tdump > dumpt - dt*0.5:
         etan.assign(h0 - H + b)
         un.assign(u0)
