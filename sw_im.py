@@ -9,7 +9,8 @@ parser.add_argument('--base_level', type=int, default=1, help='Base refinement l
 parser.add_argument('--ref_level', type=int, default=5, help='Refinement level of icosahedral grid. Default 5.')
 parser.add_argument('--dmax', type=float, default=15, help='Final time in days. Default 15.')
 parser.add_argument('--dumpt', type=float, default=24, help='Dump time in hours. Default 24.')
-parser.add_argument('--gamma', type=float, default=1.0e5, help='Augmented Lagrangian scaling parameter. Default 10000.')
+parser.add_argument('--gamma', type=float, default=1.0e5, help='Augmented Lagrangian scaling parameter. Default 10000 for AL mode.')
+parser.add_argument('--solver_mode', type=str, default='monolithic', help='Solver strategy. monolithic=use monolithic MG with Schwarz smoothers. AL=use augmented Lagrangian formulation. Default = monolithic')
 parser.add_argument('--dt', type=float, default=1, help='Timestep in hours. Default 1.')
 parser.add_argument('--filename', type=str, default='w5aug')
 parser.add_argument('--coords_degree', type=int, default=3, help='Degree of polynomials for sphere mesh approximation.')
@@ -99,8 +100,12 @@ f = 2*Omega*cz/fd.Constant(R0)  # Coriolis parameter
 g = fd.Constant(9.8)  # Gravitational constant
 b = fd.Function(V2, name="Topography")
 c = fd.sqrt(g*H)
-gamma0 = args.gamma
-gamma = fd.Constant(gamma0)
+if args.solver_mode == "AL":
+    gamma0 = args.gamma
+    gamma = fd.Constant(gamma0)
+else:
+    gamma0 = 0.
+    gamma = fd.Constant(gamma0)
 
 # D = eta + b
 
@@ -192,18 +197,6 @@ else:
 # x^0, x^1, ...
 # Df(x^k).xp = -f(x^k)
 # x^{k+1} = x^k + xp.
-sparameters = {
-    "mat_type":"matfree",
-    'snes_monitor': None,
-    "ksp_type": "fgmres",
-    "ksp_gmres_modifiedgramschmidt": None,
-    'ksp_monitor': None,
-    "pc_type": "fieldsplit",
-    "pc_fieldsplit_type": "schur",
-    #"pc_fieldsplit_schur_fact_type": "full",
-    "pc_fieldsplit_off_diag_use_amat": True,
-}
-
 
 class HelmholtzPC(fd.PCBase):
     def initialize(self, pc):
@@ -287,116 +280,167 @@ class HelmholtzPC(fd.PCBase):
         with self.yf.dat.vec_ro as v:
             v.copy(y)
 
-bottomright_helm = {
-    "ksp_type": "fgmres",
-    "ksp_monitor": None,
-    "ksp_gmres_modifiedgramschmidt": None,
-    "ksp_max_it": args.kspschur,
-    "pc_type": "python",
-    "pc_python_type": "__main__.HelmholtzPC",
-    "helmholtz" :
-    {"ksp_type":"preonly",
-     "pc_type": "lu"}
-}
 
-bottomright_mass = {
-    "ksp_type": "preonly",
-    #"ksp_monitor":None,
-    "ksp_gmres_modifiedgramschmidt": None,
-    "ksp_max_it": args.kspschur,
-    #"ksp_monitor":None,
-    "pc_type": "python",
-    "pc_python_type": "firedrake.MassInvPC",
-    "Mp_pc_type": "bjacobi",
-    "Mp_sub_pc_type": "ilu"
-}
+if args.solver_mode == 'AL':
+    
+    sparameters = {
+        "mat_type":"matfree",
+        'snes_monitor': None,
+        "ksp_type": "fgmres",
+        "ksp_gmres_modifiedgramschmidt": None,
+        'ksp_monitor': None,
+        "pc_type": "fieldsplit",
+        "pc_fieldsplit_type": "schur",
+        #"pc_fieldsplit_schur_fact_type": "full",
+        "pc_fieldsplit_off_diag_use_amat": True,
+    }
 
-if args.schurpc == "mass":
-    sparameters["fieldsplit_1"] = bottomright_mass
-elif args.schurpc == "helmholtz":
-    sparameters["fieldsplit_1"] = bottomright_helm
-else:
-    raise KeyError('Unknown Schur PC option.')
+    bottomright_helm = {
+        "ksp_type": "fgmres",
+        "ksp_monitor": None,
+        "ksp_gmres_modifiedgramschmidt": None,
+        "ksp_max_it": args.kspschur,
+        "pc_type": "python",
+        "pc_python_type": "__main__.HelmholtzPC",
+        "helmholtz" :
+        {"ksp_type":"preonly",
+         "pc_type": "lu"}
+    }
 
-topleft_LU = {
-    "ksp_type": "preonly",
-    "pc_type": "python",
-    "pc_python_type": "firedrake.AssembledPC",
-    "assembled_pc_type": "lu",
-    "assembled_pc_factor_mat_solver_type": "mumps"
-}
+    bottomright_mass = {
+        "ksp_type": "preonly",
+        #"ksp_monitor":None,
+        "ksp_gmres_modifiedgramschmidt": None,
+        "ksp_max_it": args.kspschur,
+        #"ksp_monitor":None,
+        "pc_type": "python",
+        "pc_python_type": "firedrake.MassInvPC",
+        "Mp_pc_type": "bjacobi",
+        "Mp_sub_pc_type": "ilu"
+    }
 
-topleft_MG = {
-    "ksp_type": "preonly",
-    "pc_type": "mg",
-    #"pc_mg_type": "full",
-    "mg_coarse_ksp_type": "preonly",
-    "mg_coarse_pc_type": "python",
-    "mg_coarse_pc_python_type": "firedrake.AssembledPC",
-    "mg_coarse_assembled_pc_type": "lu",
-    "mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
-    "mg_levels_ksp_type": "gmres",
-    "mg_levels_ksp_max_it": args.kspmg,
-    "mg_levels_pc_type": "python",
-    "mg_levels_pc_python_type": "firedrake.PatchPC",
-    "mg_levels_patch_pc_patch_save_operators": True,
-    "mg_levels_patch_pc_patch_partition_of_unity": False,
-    "mg_levels_patch_pc_patch_sub_mat_type": "seqaij",
-    "mg_levels_patch_pc_patch_construct_type": "star",
-    "mg_levels_patch_pc_patch_multiplicative": False,
-    "mg_levels_patch_pc_patch_symmetrise_sweep": False,
-    "mg_levels_patch_pc_patch_construct_dim": 0,
-    "mg_levels_patch_pc_patch_sub_mat_type": "seqdense",
-    "mg_levels_patch_pc_patch_dense_inverse": True,
-    "mg_levels_patch_pc_patch_precompute_element_tensors": True,
-    "mg_levels_patch_sub_pc_factor_mat_solver_type": "petsc",
-    "mg_levels_patch_sub_ksp_type": "preonly",
-    "mg_levels_patch_sub_pc_type": "lu",
-}
+    if args.schurpc == "mass":
+        sparameters["fieldsplit_1"] = bottomright_mass
+    elif args.schurpc == "helmholtz":
+        sparameters["fieldsplit_1"] = bottomright_helm
+    else:
+        raise KeyError('Unknown Schur PC option.')
 
-topleft_MGs = {
-    "ksp_type": "preonly",
-    "ksp_max_it": 3,
-    "pc_type": "mg",
-    "mg_coarse_ksp_type": "preonly",
-    "mg_coarse_pc_type": "python",
-    "mg_coarse_pc_python_type": "firedrake.AssembledPC",
-    "mg_coarse_assembled_pc_type": "lu",
-    "mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
-    "mg_levels_ksp_type": "gmres",
-    "mg_levels_ksp_max_it": args.kspmg,
-    "mg_levels_pc_type": "python",
-    "mg_levels_pc_python_type": "firedrake.AssembledPC",
-    "mg_levels_assembled_pc_type": "python",
-    "mg_levels_assembled_pc_python_type": "firedrake.ASMStarPC",
-    "mg_levels_assembled_pc_star_backend": "tinyasm",
-    "mg_levels_assmbled_pc_star_construct_dim": 0
-}
+    topleft_LU = {
+        "ksp_type": "preonly",
+        "pc_type": "python",
+        "pc_python_type": "firedrake.AssembledPC",
+        "assembled_pc_type": "lu",
+        "assembled_pc_factor_mat_solver_type": "mumps"
+    }
 
-topleft_smoother = {
-    "ksp_type": "gmres",
-    "ksp_max_it": 3,
-    "ksp_monitor": None,
-    "pc_type": "python",
-    "pc_python_type": "firedrake.PatchPC",
-    "patch_pc_patch_save_operators": True,
-    "patch_pc_patch_partition_of_unity": False,
-    "patch_pc_patch_sub_mat_type": "seqaij",
-    "patch_pc_patch_construct_type": "star",
-    "patch_pc_patch_multiplicative": False,
-    "patch_pc_patch_symmetrise_sweep": False,
-    "patch_pc_patch_construct_dim": 0,
-    "patch_sub_ksp_type": "preonly",
-    "patch_sub_pc_type": "lu",
-}
+    topleft_MG = {
+        "ksp_type": "preonly",
+        "pc_type": "mg",
+        #"pc_mg_type": "full",
+        "mg_coarse_ksp_type": "preonly",
+        "mg_coarse_pc_type": "python",
+        "mg_coarse_pc_python_type": "firedrake.AssembledPC",
+        "mg_coarse_assembled_pc_type": "lu",
+        "mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
+        "mg_levels_ksp_type": "gmres",
+        "mg_levels_ksp_max_it": args.kspmg,
+        "mg_levels_pc_type": "python",
+        "mg_levels_pc_python_type": "firedrake.PatchPC",
+        "mg_levels_patch_pc_patch_save_operators": True,
+        "mg_levels_patch_pc_patch_partition_of_unity": False,
+        "mg_levels_patch_pc_patch_sub_mat_type": "seqaij",
+        "mg_levels_patch_pc_patch_construct_type": "star",
+        "mg_levels_patch_pc_patch_multiplicative": False,
+        "mg_levels_patch_pc_patch_symmetrise_sweep": False,
+        "mg_levels_patch_pc_patch_construct_dim": 0,
+        "mg_levels_patch_pc_patch_sub_mat_type": "seqdense",
+        "mg_levels_patch_pc_patch_dense_inverse": True,
+        "mg_levels_patch_pc_patch_precompute_element_tensors": True,
+        "mg_levels_patch_sub_pc_factor_mat_solver_type": "petsc",
+        "mg_levels_patch_sub_ksp_type": "preonly",
+        "mg_levels_patch_sub_pc_type": "lu",
+    }
 
-if args.tlblock == "mg":
-    sparameters["fieldsplit_0"] = topleft_MG
-elif args.tlblock == "patch":
-    sparameters["fieldsplit_0"] = topleft_smoother
-else:
-    assert(args.tlblock=="lu")
-    sparameters["fieldsplit_0"] = topleft_LU
+    topleft_MGs = {
+        "ksp_type": "preonly",
+        "ksp_max_it": 3,
+        "pc_type": "mg",
+        "mg_coarse_ksp_type": "preonly",
+        "mg_coarse_pc_type": "python",
+        "mg_coarse_pc_python_type": "firedrake.AssembledPC",
+        "mg_coarse_assembled_pc_type": "lu",
+        "mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
+        "mg_levels_ksp_type": "gmres",
+        "mg_levels_ksp_max_it": args.kspmg,
+        "mg_levels_pc_type": "python",
+        "mg_levels_pc_python_type": "firedrake.AssembledPC",
+        "mg_levels_assembled_pc_type": "python",
+        "mg_levels_assembled_pc_python_type": "firedrake.ASMStarPC",
+        "mg_levels_assembled_pc_star_backend": "tinyasm",
+        "mg_levels_assmbled_pc_star_construct_dim": 0
+    }
+    
+    topleft_smoother = {
+        "ksp_type": "gmres",
+        "ksp_max_it": 3,
+        "ksp_monitor": None,
+        "pc_type": "python",
+        "pc_python_type": "firedrake.PatchPC",
+        "patch_pc_patch_save_operators": True,
+        "patch_pc_patch_partition_of_unity": False,
+        "patch_pc_patch_sub_mat_type": "seqaij",
+        "patch_pc_patch_construct_type": "star",
+        "patch_pc_patch_multiplicative": False,
+        "patch_pc_patch_symmetrise_sweep": False,
+        "patch_pc_patch_construct_dim": 0,
+        "patch_sub_ksp_type": "preonly",
+        "patch_sub_pc_type": "lu",
+    }
+
+    if args.tlblock == "mg":
+        sparameters["fieldsplit_0"] = topleft_MG
+    elif args.tlblock == "patch":
+        sparameters["fieldsplit_0"] = topleft_smoother
+    else:
+        assert(args.tlblock=="lu")
+        sparameters["fieldsplit_0"] = topleft_LU
+elif args.solver_mode == 'monolithic':
+    # monolithic solver options
+
+    sparameters = {
+        "snes_monitor": None,
+        "mat_type": "matfree",
+        "ksp_type": "fgmres",
+        "ksp_monitor_true_residual": None,
+        "ksp_converged_reason": None,
+        "ksp_atol": 1e-8,
+        "ksp_rtol": 1e-8,
+        "ksp_max_it": 400,
+        "pc_type": "mg",
+        "pc_mg_cycle_type": "v",
+        "pc_mg_type": "multiplicative",
+        "mg_levels_ksp_type": "gmres",
+        "mg_levels_ksp_max_it": 3,
+        #"mg_levels_ksp_convergence_test": "skip",
+        "mg_levels_pc_type": "python",
+        "mg_levels_pc_python_type": "firedrake.PatchPC",
+        "mg_levels_patch_pc_patch_save_operators": True,
+        "mg_levels_patch_pc_patch_partition_of_unity": True,
+        "mg_levels_patch_pc_patch_sub_mat_type": "seqdense",
+        "mg_levels_patch_pc_patch_construct_codim": 0,
+        "mg_levels_patch_pc_patch_construct_type": "vanka",
+        "mg_levels_patch_pc_patch_local_type": "additive",
+        "mg_levels_patch_pc_patch_precompute_element_tensors": True,
+        "mg_levels_patch_pc_patch_symmetrise_sweep": False,
+        "mg_levels_patch_sub_ksp_type": "preonly",
+        "mg_levels_patch_sub_pc_type": "lu",
+        "mg_levels_patch_sub_pc_factor_shift_type": "nonzero",
+        "mg_coarse_pc_type": "python",
+        "mg_coarse_pc_python_type": "firedrake.AssembledPC",
+        "mg_coarse_assembled_pc_type": "lu",
+        "mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
+    }
     
 dt = 60*60*args.dt
 dT.assign(dt)
