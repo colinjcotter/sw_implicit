@@ -261,7 +261,7 @@ t = 0.
 dt = 6.
 dT.assign(dt)
 tmax = 3600.
-dumpt = 60
+dumpt = 6.
 tdump = 0.
 
 print('tmax', tmax, 'dt', dt)
@@ -274,5 +274,5 @@ while t < tmax + 0.5*dt:
     Un.assign(Unp1)
 
     if tdump > dumpt - dt*0.5:
-        file_gw.write(un, rhon, pin, thetan)
+        file_gw.write(un, rhon, Pin, thetan)
         tdump -= dumpt
