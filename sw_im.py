@@ -21,7 +21,7 @@ parser.add_argument('--tlblock', type=str, default='mg', help='Solver for the ve
 parser.add_argument('--schurpc', type=str, default='mass', help='Preconditioner for the Schur complement. mass==mass inverse, helmholtz==helmholtz inverse * laplace * mass inverse. Default is mass')
 parser.add_argument('--show_args', action='store_true', help='Output all the arguments.')
 parser.add_argument('--time_scheme', type=int, default=0, help='Timestepping scheme. 0=Crank-Nicholson. 1=Implicit midpoint rule.')
-parser.add_argument('--fancy_transfers', action='store_true', help='Use the commuting transfers for the DG div(Hu) operator.')
+
 args = parser.parse_known_args()
 args = args[0]
 
@@ -518,10 +518,14 @@ while t < tmax + 0.5*dt:
     tdump += dt
 
     nsolver.solve()
+    res = fd.assemble(testeqn)
+    PETSc.Sys.Print(res.dat.data[0].max(), res.dat.data[0].min(),
+          res.dat.data[1].max(), res.dat.data[1].min())
     Un.assign(Unp1)
     res = fd.assemble(testeqn)
     PETSc.Sys.Print(res.dat.data[0].max(), res.dat.data[0].min(),
           res.dat.data[1].max(), res.dat.data[1].min())
+    
     if tdump > dumpt - dt*0.5:
         etan.assign(h0 - H + b)
         un.assign(u0)
