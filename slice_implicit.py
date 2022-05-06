@@ -1,7 +1,7 @@
 import firedrake as fd
+import numpy as np
 
-dt = 6.
-dT = fd.Constant(dt)
+dT = fd.Constant(1)
 tmax = 3600.
 
 nlayers = 10  # horizontal layers
@@ -21,6 +21,9 @@ T_0 = fd.Constant(273.15)  # ref. temperature
 # build volume mesh
 H = 1.0e4  # Height position of the model top
 mesh = ExtrudedMesh(m, layers=nlayers, layer_height=H/nlayers)
+
+horizontal_degree = 1
+vertical_degree = 1
 
 S1 = FiniteElement(family, interval, horizontal_degree+1)
 S2 = FiniteElement("DG", interval, horizontal_degree)
@@ -44,7 +47,7 @@ Vv = fd.FunctionSpace("Vv", mesh, V2v_elt)
 W = V1 * V2 * V2 * Vt #velocity, density, pressure, temperature
 
 Un = fd.Function(W)
-Unp = fd.Function(W)
+Unp1 = fd.Function(W)
 
 x, z = fd.SpatialCoordinate(mesh)
 
@@ -80,17 +83,17 @@ else:
     bstring = "top"
 
 arhs = -cp*fd.inner(dv, n)*theta*pi_boundary*bmeasure
-bcs = [DirichletBC(W_h.sub(0), Constant(0.0), bstring)]
+bcs = [fd.DirichletBC(W_h.sub(0), Constant(0.0), bstring)]
 
-wh = Function(W_h)
-PiProblem = LinearVariationalProblem(alhs, arhs, wh, bcs=bcs)
+wh = fd.Function(W_h)
+PiProblem = fd.LinearVariationalProblem(alhs, arhs, wh, bcs=bcs)
 
 params = {'mat_type':'aij',
           'ksp_type': 'preonly',
           'pc_type': 'lu',
           'pc_factor_mat_solver_type','mumps'}
 
-PiSolver = LinearVariationalSolver(PiProblem,
+PiSolver = fd.LinearVariationalSolver(PiProblem,
                                    solver_parameters=params,
                                    options_prefix="pisolver")
 
@@ -100,14 +103,13 @@ un, rhon, Pin, thetan = Un.split()
 Pin.assign(Pi0)
 
 #get the nonlinear rho
-rho = fd.TrialFunction(V2)
-rho_bal = Function(V2)
+rho_bal = fd.Function(V2)
 q = fd.TestFunction(V2)
-piform = (rho * R_d * thetan / p_0) ** (kappa / (1 - kappa))
-rho_eqn = w*(pi - piform)*dx
+piform = (rho_bal * R_d * thetan / p_0) ** (kappa / (1 - kappa))
+rho_eqn = q*(pi - piform)*fd.dx
 
-RhoProblem = NonlinearVariationalProblem(rho_eqn, rho_bal)
-RhoSolver = NonlinearVariationalSolver(RhoProblem,
+RhoProblem = fd.NonlinearVariationalProblem(rho_eqn, rho_bal)
+RhoSolver = fd.NonlinearVariationalSolver(RhoProblem,
                                        solver_parameters=params,
                                        options_prefix="rhosolver")
 RhoSolver.solve()
@@ -117,24 +119,29 @@ a = fd.Constant(5.0e3)
 deltaTheta = fd.Constant(1.0e-2)
 theta_pert = deltaTheta*sin(np.pi*z/H)/(1 + (x - L/2)**2/a**2)
 thetan.interpolate(thetan + theta_pert)
-un.project(as_vector([20.0, 0.0]))
+un.project(fd.as_vector([20.0, 0.0]))
 
 #The timestepping solver
-unp1, rhonp1, Pinp1, thetanp1
+unp1, rhonp1, pinp1, thetanp1 = fd.split(Unp1)
 unph = 0.5*(un + unp1)
 thetanph = 0.5*(thetan + thetanp1)
 rhonph = 0.5*(rhon + rhonp1)
-Pinh = 0.5*(Pin + Pinp1)
-un = 0.5*(np.dot(unph, n) + abs(np.dot(unph, n)))
+Pinh = 0.5*(pin + pinp1)
 
+un = 0.5*(np.dot(unph, n) + abs(np.dot(unph, n)))
+n = FacetNormal(self.state.mesh)
+Upwind = 0.5*(sign(dot(unph, n))+1)
+        
+Up = as_vector([Constant(1.0), Constant(0.0)])
 
 def theta_eqn(q):
-    NEEDS SUPG
+    qsupg = q + Constant(0.5)*dT*inner(unph, up)*inner(grad(theta), up)
     return (
-        q*(thetanp1 - thetan)*dx -
-        dT*div(q*unph)*thetanph*dx +
-        dT*jump(q)*(un('+')*thetanph('+')
-                    - un('-')*thetanph('-'))*(dS_v + dS_h)
+        qsupg*(thetanp1 - thetan)*dx -
+        dT*qsupg*inner(unph,grad(thetanph))*dx +
+        dT*jump(qsupg)*(un('+')*thetanph('+')
+                    - un('-')*thetanph('-'))*dS_v
+        - dT*jump(qsupg*un*thetanph)*dS_v
     )
 
 
@@ -147,24 +154,115 @@ def rho_eqn(q):
 
 
 def pi_eqn(q):
-    return q*(Pinp1 -
-              (rhonp1 * R_d * thetanp1 / p_0) ** (kappa / (1 - kappa)))*dx
+    piform = (rho_bal * R_d * thetanph / p_0) ** (kappa / (1 - kappa))
+    return q*(pinph - piform)*fd.dx
 
 
+
+d = mesh.cell_dimension()
+
+
+def perp(u):
+    #vertical slice sign convention
+    return as_vector([u[1], -u[0]])
+
+
+def curl0(u):
+    """
+    Curl function from dim-2 forms to dim-1 forms
+    """
+    if d == 2:
+        # equivalent vector is (0, u, 0)
+        return -perp(grad(u))
+    elif d == 3:
+        return curl(u)
+    else:
+        Raise NotImplementedError
+
+
+def curl1(u):
+    """
+    dual curl function from dim-1 forms to dim-2 forms
+    """
+    if d == 2:
+        # we have vector in x-z plane and return scalar
+        # representing y component of the curl
+        return div(perp(u))
+    elif d == 3:
+        return curl(u)
+    else:
+        Raise NotImplementedError
+
+
+def cross1(u, w):
+    """
+    cross product (slice vector field with slice vector field)
+    """
+    if d == 2:
+        # cross product of two slice vectors goes into y cpt
+        return w[0]*u[2] - w[2]*u[0]
+    elif d == 3:
+        return cross(u, w)
+    else:
+        raise NotImplementedError
+
+
+def cross0(u, w):
+    """
+    cross product (slice vector field with out-of-slice vector field)
+    """
+    if d == 2:
+        # cross product of two slice vectors goes into y cpt
+        return w*(-u[2] + u[1])
+    elif d == 3:
+        return cross(u, w)
+    else:
+        raise NotImplementedError
+    
+
+def both(u):
+    return 2*fd.avg(u)
+
+    
 def u_eqn(w):
+    """
+    Written in a dimension agnostic way
+    """
     return (
-        inner(w, unp1 - un)*dx - dT*cp*div(thetanph*w)*Pinph*dx
+        inner(w, unp1 - un)*dx
+        inner(unph, curl0(cross1(unph, w)))*dx
+                - inner(both(Upwind*unph),
+                        both(cross0(n, cross1(unph, w))))*(dS_h + dS_v)
+            )
+        dT*cp*div(thetanph*w)*Pinph*dx
         - dT*jump(w*thetanph, n)*avg(Pinph)*dS_v
-        
 
+du, drho, dpi, dtheta = fd.TestFunctions(W)
+eqn = u_eqn(du) + rho_eqn(drho) + pi_eqn(dpi) + theta_eqn(dtheta)
 
-        
-DONT FORGET BCS!
+bcs = [fd.DirichletBC(W.sub(0), 0., "bottom"),
+       fd.DirichletBC(W.sub(0), 0., "top")]
+
+nprob = fd.NonlinearVariationalProblem(eqn, Unp1, bcs=bcs)
+
+lu_params = {"mat_type": "aij",
+             "ksp_type": "preonly",
+             "pc_type": "lu",
+             "pc_factor_mat_solver_type": "mumps"}
+
+nsolver = fd.NonlinearVariationalSolver(nprob, solver_parameters=lu_params)
     
 name = "gw_imp"
 file_gw = fd.File(name+'.pvd')
 file_gw.write(un, rhon, pin, thetan)
 Unp1.assign(Un)
+
+t = 0.
+dt = 6.
+dT.assign(dt)
+tmax = 3600.
+dumpt = 
+tdump = 0.
 
 print('tmax', tmax, 'dt', dt)
 while t < tmax + 0.5*dt:
@@ -176,8 +274,5 @@ while t < tmax + 0.5*dt:
     Un.assign(Unp1)
 
     if tdump > dumpt - dt*0.5:
-        etan.assign(h0 - H + b)
-        un.assign(u0)
-        qsolver.solve()
-        file_gw.write(un, etan, qn)
+        file_gw.write(un, rhon, pin, thetan)
         tdump -= dumpt
