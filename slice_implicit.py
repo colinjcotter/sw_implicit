@@ -57,10 +57,12 @@ thetab = Tsurf*fd.exp(N**2*z/g)
 
 pi_boundary = 1.
 
+Up = fd.as_vector([fd.Constant(0.0), fd.Constant(1.0)])
+
 # Calculate hydrostatic Pi, rho
 W_h = Vv * V2
 
-v, pi = fd.TrialFunctions(W_h)
+v, Pi = fd.TrialFunctions(W_h)
 dv, dpi = fd.TestFunctions(W_h)
 
 n = fd.FacetNormal(mesh)
@@ -68,9 +70,10 @@ cp = fd.Constant(1004.5)  # SHC of dry air at const. pressure (J/kg/K)
 
 un, rhon, Pin, thetan = Un.split()
 thetan.interpolate(thetab)
+theta_back = fd.Function(Vt).assign(thetan)
 
 alhs = (
-    (cp*fd.inner(v, dv) - cp*fd.div(dv*thetan)*pi)*fd.dx
+    (cp*fd.inner(v, dv) - cp*fd.div(dv*thetan)*Pi)*fd.dx
     + dpi*fd.div(thetan*v)*fd.dx
 )
 
@@ -83,16 +86,19 @@ else:
     bstring = "top"
 
 arhs = -cp*fd.inner(dv, n)*thetan*pi_boundary*bmeasure
+arhs -= g*fd.inner(dv, Up)*fd.dx
 bcs = [fd.DirichletBC(W_h.sub(0), fd.as_vector([fd.Constant(0.0),
                                              fd.Constant(0.0)]), bstring)]
 
 wh = fd.Function(W_h)
 PiProblem = fd.LinearVariationalProblem(alhs, arhs, wh, bcs=bcs)
 
-lu_params = {'mat_type':'aij',
-          'ksp_type': 'preonly',
-          'pc_type': 'lu',
-          'pc_factor_mat_solver_type':'mumps'}
+lu_params = {
+    'snes_monitor':None,
+    'mat_type':'aij',
+    'ksp_type': 'preonly',
+    'pc_type': 'lu',
+    'pc_factor_mat_solver_type':'mumps'}
 
 PiSolver = fd.LinearVariationalSolver(PiProblem,
                                    solver_parameters=lu_params,
@@ -108,7 +114,6 @@ rho_bal = fd.Function(V2)
 q = fd.TestFunction(V2)
 
 rho_bal.project(p_0*Pin**(-kappa/(1-kappa))/thetan/R_d)
-
 piform = (rho_bal * R_d * thetan / p_0) ** (kappa / (1 - kappa))
 rho_eqn = q*(Pin - piform)*fd.dx
 
@@ -117,42 +122,42 @@ RhoSolver = fd.NonlinearVariationalSolver(RhoProblem,
                                        solver_parameters=lu_params,
                                        options_prefix="rhosolver")
 RhoSolver.solve()
+
 rhon.assign(rho_bal)
+rho_back = fd.Function(V2).assign(rho_bal)
 
 a = fd.Constant(5.0e3)
 deltaTheta = fd.Constant(1.0e-2)
 theta_pert = deltaTheta*fd.sin(np.pi*z/H)/(1 + (x - L/2)**2/a**2)
 thetan.interpolate(thetan + theta_pert)
-un.project(fd.as_vector([20.0, 0.0]))
+#un.project(fd.as_vector([20.0, 0.0]))
 
 #The timestepping solver
-unp1, rhonp1, pinp1, thetanp1 = fd.split(Unp1)
+unp1, rhonp1, Pinp1, thetanp1 = fd.split(Unp1)
 unph = 0.5*(un + unp1)
 thetanph = 0.5*(thetan + thetanp1)
 rhonph = 0.5*(rhon + rhonp1)
-Pinph = 0.5*(Pin + pinp1)
+Pinph = 0.5*(Pin + Pinp1)
 
 unn = 0.5*(np.dot(unph, n) + abs(np.dot(unph, n)))
 n = fd.FacetNormal(mesh)
 Upwind = 0.5*(fd.sign(fd.dot(unph, n))+1)
-        
-Up = fd.as_vector([fd.Constant(1.0), fd.Constant(0.0)])
 
 def theta_eqn(q):
     qsupg = q + fd.Constant(0.5)*dT*fd.inner(unph, Up)*fd.inner(fd.grad(q), Up)
     return (
-        qsupg*(thetanp1 - thetan)*fd.dx -
-        dT*qsupg*fd.inner(unph,fd.grad(thetanph))*fd.dx +
-        dT*fd.jump(qsupg)*(unn('+')*thetanph('+')
+        qsupg*(thetanp1 - thetan)*fd.dx
+        + dT*qsupg*fd.inner(unph,fd.grad(thetanph))*fd.dx
+        + dT*fd.jump(qsupg)*(unn('+')*thetanph('+')
                     - unn('-')*thetanph('-'))*fd.dS_v
-        - dT*fd.jump(qsupg*unn*thetanph)*fd.dS_v
+        - dT*fd.jump(qsupg*unph*thetanph, n)*fd.dS_v
     )
 
 
 def rho_eqn(q):
     return (
         q*(rhonp1 - rhon)*fd.dx -
-        dT*fd.inner(fd.grad(q), unph*thetanph)*fd.dx +
+        dT*fd.inner(fd.grad(q), unph*rhonph)*fd.dx +
         dT*fd.jump(q)*(unn('+')*rhonph('+')
                        - unn('-')*rhonph('-'))*(fd.dS_v + fd.dS_h)
     )
@@ -173,10 +178,14 @@ def perp(u):
 
 def curl0(u):
     """
-    Curl function from dim-2 forms to dim-1 forms
+    Curl function from y-cpt field to x-z field
     """
     if d == 2:
         # equivalent vector is (0, u, 0)
+
+        # |i   j   k  |
+        # |d_x 0   d_z| = (- du/dz, 0, du_2/dx)
+        # |0   u   0  |
         return -perp(fd.grad(u))
     elif d == 3:
         return fd.curl(u)
@@ -232,13 +241,17 @@ def u_eqn(w):
     """
     Written in a dimension agnostic way
     """
+    K = fd.Constant(0.5)*fd.inner(unph, unph)
+    
     return (
         fd.inner(w, unp1 - un)*fd.dx
-        + fd.inner(unph, curl0(cross1(unph, w)))*fd.dx
-               - dT*fd.inner(both(Upwind*unph),
-                       both(cross0(n, cross1(unph, w))))*(fd.dS_h + fd.dS_v)
-        + dT*cp*fd.div(thetanph*w)*Pinph*fd.dx
-        - dT*fd.jump(w*thetanph, n)*fd.avg(Pinph)*fd.dS_v
+        #+ dT*fd.inner(unph, curl0(cross1(unph, w)))*fd.dx
+        #- dT*fd.inner(both(Upwind*unph),
+        #              both(cross0(n, cross1(unph, w))))*(fd.dS_h + fd.dS_v)
+        #- dT*fd.div(w)*K*fd.dx
+        - dT*cp*fd.div(thetanph*w)*Pinph*fd.dx
+        + dT*cp*fd.jump(w*thetanph, n)*fd.avg(Pinph)*fd.dS_v
+        + dT*fd.inner(w, Up)*g*fd.dx
         )
 
 du, drho, dpi, dtheta = fd.TestFunctions(W)
@@ -254,7 +267,9 @@ nsolver = fd.NonlinearVariationalSolver(nprob, solver_parameters=lu_params,
     
 name = "gw_imp"
 file_gw = fd.File(name+'.pvd')
-file_gw.write(un, rhon, Pin, thetan)
+delta_theta = fd.Function(Vt, name="delta theta").assign(thetan-theta_back)
+delta_rho = fd.Function(V2, name="delta rho").assign(rhon-rho_back)
+file_gw.write(un, rhon, Pin, thetan, delta_rho, delta_theta)
 Unp1.assign(Un)
 
 t = 0.
@@ -274,5 +289,7 @@ while t < tmax + 0.5*dt:
     Un.assign(Unp1)
 
     if tdump > dumpt - dt*0.5:
-        file_gw.write(un, rhon, Pin, thetan)
+        delta_theta.assign(thetan-theta_back)
+        delta_rho.assign(rhon-rho_back)
+        file_gw.write(un, rhon, Pin, thetan, delta_rho, delta_theta)
         tdump -= dumpt
