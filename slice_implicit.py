@@ -319,8 +319,7 @@ unn = 0.5*(fd.inner(-un, n) + abs(fd.inner(-un, n))) # gives fluxes *into* cell 
 v = fd.TestFunction(DG0)
 Courant_num = fd.Function(DG0, name="Courant numerator")
 Courant_num_form = dT*(
-    both(unn*v)*fd.dS_v
-    + both(unn*v)*fd.dS_h
+    both(unn*v)*(fd.dS_v + fd.dS_h)
     + unn*v*fd.ds_tb
 )
 Courant_denom = fd.Function(DG0, name="Courant denominator")
@@ -329,7 +328,6 @@ Courant = fd.Function(DG0, name="Courant")
 
 fd.assemble(Courant_num_form, tensor=Courant_num)
 Courant.assign(Courant_num/Courant_denom)
-print(Courant.dat.data[:].max())
 
 file_gw.write(un, rhon, thetan, delta_rho, delta_theta, Courant)
 Unp1.assign(Un)
