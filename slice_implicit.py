@@ -1,13 +1,16 @@
 import firedrake as fd
 import numpy as np
+from petsc4py import PETSc
 
 dT = fd.Constant(1)
 tmax = 3600.
 
-nlayers = 10  # horizontal layers
+nlayers = 50  # horizontal layers
 columns = 150  # number of columns
 L = 3.0e5
-m = fd.PeriodicIntervalMesh(columns, L)
+distribution_parameters = {"partition": True, "overlap_type": (fd.DistributedMeshOverlapType.VERTEX, 2)}
+m = fd.PeriodicIntervalMesh(columns, L, distribution_parameters =
+                            distribution_parameters)
 
 g = fd.Constant(9.810616)
 N = fd.Constant(0.01)  # Brunt-Vaisala frequency (1/s)
@@ -44,7 +47,7 @@ V2 = fd.FunctionSpace(mesh, V3_elt, name="Pressure")
 Vt = fd.FunctionSpace(mesh, V2t_elt, name="Temperature")
 Vv = fd.FunctionSpace(mesh, V2v_elt, name="Vv")
 
-W = V1 * V2 * V2 * Vt #velocity, density, pressure, temperature
+W = V1 * V2 * Vt #velocity, density, temperature
 
 Un = fd.Function(W)
 Unp1 = fd.Function(W)
@@ -62,19 +65,27 @@ Up = fd.as_vector([fd.Constant(0.0), fd.Constant(1.0)])
 # Calculate hydrostatic Pi, rho
 W_h = Vv * V2
 
-v, Pi = fd.TrialFunctions(W_h)
-dv, dpi = fd.TestFunctions(W_h)
-
 n = fd.FacetNormal(mesh)
 cp = fd.Constant(1004.5)  # SHC of dry air at const. pressure (J/kg/K)
 
-un, rhon, Pin, thetan = Un.split()
+un, rhon, thetan = Un.split()
 thetan.interpolate(thetab)
 theta_back = fd.Function(Vt).assign(thetan)
 
-alhs = (
+wh = fd.Function(W_h)
+v, rho = wh.split()
+rho.assign(1.0)
+v, rho = fd.split(wh)
+dv, drho = fd.TestFunctions(W_h)
+
+def pi_formula(rho, theta):
+    return (rho * R_d * theta / p_0) ** (kappa / (1 - kappa))
+
+Pi = pi_formula(rho, thetan)
+
+rhoeqn = (
     (cp*fd.inner(v, dv) - cp*fd.div(dv*thetan)*Pi)*fd.dx
-    + dpi*fd.div(thetan*v)*fd.dx
+    + drho*fd.div(thetan*v)*fd.dx
 )
 
 top = False
@@ -85,96 +96,109 @@ else:
     bmeasure = fd.ds_b
     bstring = "top"
 
-arhs = -cp*fd.inner(dv, n)*thetan*pi_boundary*bmeasure
-arhs -= g*fd.inner(dv, Up)*fd.dx
+rhoeqn += cp*fd.inner(dv, n)*thetan*pi_boundary*bmeasure
+rhoeqn += g*fd.inner(dv, Up)*fd.dx
 bcs = [fd.DirichletBC(W_h.sub(0), fd.as_vector([fd.Constant(0.0),
                                              fd.Constant(0.0)]), bstring)]
 
-wh = fd.Function(W_h)
-PiProblem = fd.LinearVariationalProblem(alhs, arhs, wh, bcs=bcs)
+RhoProblem = fd.NonlinearVariationalProblem(rhoeqn, wh, bcs=bcs)
 
-lu_params = {
-    'snes_monitor':None,
-    'mat_type':'aij',
-    'ksp_type': 'preonly',
-    'pc_type': 'lu',
-    'pc_factor_mat_solver_type':'mumps'}
+sparameters = {
+    "snes_converged_reason": None,
+    "mat_type": "matfree",
+    "ksp_type": "fgmres",
+    "ksp_converged_reason": None,
+    "ksp_atol": 1e-8,
+    "ksp_rtol": 1e-8,
+    "ksp_max_it": 400,
+    "pc_type": "mg",
+    "pc_mg_cycle_type": "v",
+    "pc_mg_type": "multiplicative",
+    "mg_levels_ksp_type": "gmres",
+    "mg_levels_ksp_max_it": 2,
+    "mg_levels_pc_type": "python",
+    "mg_levels_pc_python_type": "firedrake.AssembledPC",
+    "mg_levels_assembled_pc_type": "python",
+    "mg_levels_assembled_pc_python_type": "firedrake.ASMStarPC",
+    "mg_levels_assmbled_pc_star_construct_dim": 0,
+    "mg_coarse_pc_type": "python",
+    "mg_coarse_pc_python_type": "firedrake.AssembledPC",
+    "mg_coarse_assembled_pc_type": "lu"
+}
 
-PiSolver = fd.LinearVariationalSolver(PiProblem,
-                                   solver_parameters=lu_params,
-                                   options_prefix="pisolver")
+schur_params = {'ksp_type': 'gmres',
+                'pc_type': 'fieldsplit',
+                'pc_fieldsplit_type': 'schur',
+                'pc_fieldsplit_schur_fact_type': 'full',
+                'pc_fieldsplit_schur_precondition': 'selfp',
+                'fieldsplit_1_ksp_type': 'preonly',
+                'fieldsplit_1_pc_type': 'gamg',
+                'fieldsplit_1_mg_levels_pc_type': 'bjacobi',
+                'fieldsplit_1_mg_levels_sub_pc_type': 'ilu',
+                'fieldsplit_0_ksp_type': 'richardson',
+                'fieldsplit_0_ksp_max_it': 4,
+                'ksp_atol': 1.e-08,
+                'ksp_rtol': 1.e-08}
 
-PiSolver.solve()
-v, Pi0 = wh.split()
-
-Pin.assign(Pi0)
-
-#get the nonlinear rho
-rho_bal = fd.Function(V2)
-q = fd.TestFunction(V2)
-
-rho_bal.project(p_0*Pin**(-kappa/(1-kappa))/thetan/R_d)
-piform = (rho_bal * R_d * thetan / p_0) ** (kappa / (1 - kappa))
-rho_eqn = q*(Pin - piform)*fd.dx
-
-RhoProblem = fd.NonlinearVariationalProblem(rho_eqn, rho_bal)
 RhoSolver = fd.NonlinearVariationalSolver(RhoProblem,
-                                       solver_parameters=lu_params,
-                                       options_prefix="rhosolver")
-RhoSolver.solve()
+                                          solver_parameters=schur_params,
+                                          options_prefix="rhosolver")
 
-rhon.assign(rho_bal)
-rho_back = fd.Function(V2).assign(rho_bal)
+RhoSolver.solve()
+v, Rho0 = wh.split()
+
+rhon.assign(Rho0)
+rho_back = fd.Function(V2).assign(Rho0)
 
 a = fd.Constant(5.0e3)
 deltaTheta = fd.Constant(1.0e-2)
 theta_pert = deltaTheta*fd.sin(np.pi*z/H)/(1 + (x - L/2)**2/a**2)
 thetan.interpolate(thetan + theta_pert)
-#un.project(fd.as_vector([20.0, 0.0]))
+un.project(fd.as_vector([20.0, 0.0]))
 
 #The timestepping solver
-unp1, rhonp1, Pinp1, thetanp1 = fd.split(Unp1)
+un, rhon, thetan = fd.split(Un)
+unp1, rhonp1, thetanp1 = fd.split(Unp1)
 unph = 0.5*(un + unp1)
 thetanph = 0.5*(thetan + thetanp1)
 rhonph = 0.5*(rhon + rhonp1)
-Pinph = 0.5*(Pin + Pinp1)
+Pinph = pi_formula(rhonph, thetanph)
 
-unn = 0.5*(np.dot(unph, n) + abs(np.dot(unph, n)))
 n = fd.FacetNormal(mesh)
 Upwind = 0.5*(fd.sign(fd.dot(unph, n))+1)
+
+def theta_tendency(q, u, theta):
+    unn = 0.5*(fd.inner(u, n) + abs(fd.inner(u, n)))
+    return (
+        q*fd.inner(u,fd.grad(theta))*fd.dx
+        + fd.jump(q)*(unn('+')*theta('+')
+                      - unn('-')*theta('-'))*fd.dS_v
+        - fd.jump(q*u*theta, n)*fd.dS_v
+    )
 
 def theta_eqn(q):
     qsupg = q + fd.Constant(0.5)*dT*fd.inner(unph, Up)*fd.inner(fd.grad(q), Up)
     return (
         qsupg*(thetanp1 - thetan)*fd.dx
-        + dT*qsupg*fd.inner(unph,fd.grad(thetanph))*fd.dx
-        + dT*fd.jump(qsupg)*(unn('+')*thetanph('+')
-                    - unn('-')*thetanph('-'))*fd.dS_v
-        - dT*fd.jump(qsupg*unph*thetanph, n)*fd.dS_v
+        + dT*theta_tendency(qsupg, unph, thetanph)
     )
 
+def rho_tendency(q, rho, u):
+    unn = 0.5*(fd.inner(u, n) + abs(fd.inner(u, n)))
+    return (
+        - fd.inner(fd.grad(q), u*rho)*fd.dx +
+        fd.jump(q)*(unn('+')*rho('+')
+                    - unn('-')*rho('-'))*(fd.dS_v + fd.dS_h)
+    )
 
 def rho_eqn(q):
     return (
-        q*(rhonp1 - rhon)*fd.dx -
-        dT*fd.inner(fd.grad(q), unph*rhonph)*fd.dx +
-        dT*fd.jump(q)*(unn('+')*rhonph('+')
-                       - unn('-')*rhonph('-'))*(fd.dS_v + fd.dS_h)
+        q*(rhonp1 - rhon)*fd.dx
+        + dT*rho_tendency(q, rhonph, unph)
     )
 
 
-def pi_eqn(q):
-    piform = (rho_bal * R_d * thetanph / p_0) ** (kappa / (1 - kappa))
-    return q*(Pinph - piform)*fd.dx
-
-
-
 d = np.sum(mesh.cell_dimension())
-
-def perp(u):
-    #vertical slice sign convention
-    return fd.as_vector([u[1], -u[0]])
-
 
 def curl0(u):
     """
@@ -184,9 +208,9 @@ def curl0(u):
         # equivalent vector is (0, u, 0)
 
         # |i   j   k  |
-        # |d_x 0   d_z| = (- du/dz, 0, du_2/dx)
+        # |d_x 0   d_z| = (- du/dz, 0, du/dx)
         # |0   u   0  |
-        return -perp(fd.grad(u))
+        return fd.as_vector([-u.dx(1), u.dx(0)])
     elif d == 3:
         return fd.curl(u)
     else:
@@ -200,7 +224,12 @@ def curl1(u):
     if d == 2:
         # we have vector in x-z plane and return scalar
         # representing y component of the curl
-        return fd.div(perp(u))
+
+        # |i   j   k   |
+        # |d_x 0   d_z | = (0, -du_3/dx + du_1/dz, 0)
+        # |u_1 0   u_3 |
+        
+        return -u[1].dx(0) + u[0].dx(1)
     elif d == 3:
         return fd.curl(u)
     else:
@@ -213,6 +242,11 @@ def cross1(u, w):
     """
     if d == 2:
         # cross product of two slice vectors goes into y cpt
+
+        # |i   j   k   |
+        # |u_1 0   u_3 | = (0, -u_1*w_3 + u_3*w_1, 0)
+        # |w_1 0   w_3 |
+
         return w[0]*u[1] - w[1]*u[0]
     elif d == 3:
         return fd.cross(u, w)
@@ -224,9 +258,14 @@ def cross0(u, w):
     """
     cross product (slice vector field with out-of-slice vector field)
     """
+
+    # |i   j   k   |
+    # |u_1 0   u_3 | = (-w*u_3, 0, w*u_1)
+    # |0   w   0   |
+
     if d == 2:
         # cross product of two slice vectors goes into y cpt
-        return -perp(w*u)
+        return fd.as_vector([-w*u[1], w*u[0]])
     elif d == 3:
         return fd.cross(u, w)
     else:
@@ -245,43 +284,64 @@ def u_eqn(w):
     
     return (
         fd.inner(w, unp1 - un)*fd.dx
-        #+ dT*fd.inner(unph, curl0(cross1(unph, w)))*fd.dx
-        #- dT*fd.inner(both(Upwind*unph),
-        #              both(cross0(n, cross1(unph, w))))*(fd.dS_h + fd.dS_v)
-        #- dT*fd.div(w)*K*fd.dx
+        + dT*fd.inner(unph, curl0(cross1(unph, w)))*fd.dx
+        - dT*fd.inner(both(Upwind*unph),
+                      both(cross0(n, cross1(unph, w))))*(fd.dS_h + fd.dS_v)
+        - dT*fd.div(w)*K*fd.dx
         - dT*cp*fd.div(thetanph*w)*Pinph*fd.dx
         + dT*cp*fd.jump(w*thetanph, n)*fd.avg(Pinph)*fd.dS_v
         + dT*fd.inner(w, Up)*g*fd.dx
         )
 
-du, drho, dpi, dtheta = fd.TestFunctions(W)
-eqn = u_eqn(du) + rho_eqn(drho) + pi_eqn(dpi) + theta_eqn(dtheta)
+du, drho, dtheta = fd.TestFunctions(W)
+eqn = u_eqn(du) + rho_eqn(drho) + theta_eqn(dtheta)
 
 bcs = [fd.DirichletBC(W.sub(0), 0., "bottom"),
        fd.DirichletBC(W.sub(0), 0., "top")]
 
 nprob = fd.NonlinearVariationalProblem(eqn, Unp1, bcs=bcs)
 
-nsolver = fd.NonlinearVariationalSolver(nprob, solver_parameters=lu_params,
+nsolver = fd.NonlinearVariationalSolver(nprob, solver_parameters=sparameters,
                                         options_prefix="nsolver")
     
 name = "gw_imp"
 file_gw = fd.File(name+'.pvd')
+un, rhon, thetan = Un.split()
 delta_theta = fd.Function(Vt, name="delta theta").assign(thetan-theta_back)
 delta_rho = fd.Function(V2, name="delta rho").assign(rhon-rho_back)
-file_gw.write(un, rhon, Pin, thetan, delta_rho, delta_theta)
+
+dt = 12.
+dT.assign(dt)
+
+DG0 = fd.FunctionSpace(mesh, "DG", 0)
+One = fd.Function(DG0).assign(1.0)
+unn = 0.5*(fd.inner(-un, n) + abs(fd.inner(-un, n))) # gives fluxes *into* cell only
+v = fd.TestFunction(DG0)
+Courant_num = fd.Function(DG0, name="Courant numerator")
+Courant_num_form = dT*(
+    both(unn*v)*fd.dS_v
+    + both(unn*v)*fd.dS_h
+    + unn*v*fd.ds_tb
+)
+Courant_denom = fd.Function(DG0, name="Courant denominator")
+fd.assemble(One*v*fd.dx, tensor=Courant_denom)
+Courant = fd.Function(DG0, name="Courant")
+
+fd.assemble(Courant_num_form, tensor=Courant_num)
+Courant.assign(Courant_num/Courant_denom)
+print(Courant.dat.data[:].max())
+
+file_gw.write(un, rhon, thetan, delta_rho, delta_theta, Courant)
 Unp1.assign(Un)
 
 t = 0.
-dt = 6.
-dT.assign(dt)
-tmax = 3600.
-dumpt = 6.
+tmax = 12.
+dumpt = 60.
 tdump = 0.
 
-print('tmax', tmax, 'dt', dt)
-while t < tmax + 0.5*dt:
-    print(t)
+PETSc.Sys.Print('tmax', tmax, 'dt', dt)
+while t < tmax - 0.5*dt:
+    PETSc.Sys.Print(t)
     t += dt
     tdump += dt
 
@@ -291,5 +351,9 @@ while t < tmax + 0.5*dt:
     if tdump > dumpt - dt*0.5:
         delta_theta.assign(thetan-theta_back)
         delta_rho.assign(rhon-rho_back)
-        file_gw.write(un, rhon, Pin, thetan, delta_rho, delta_theta)
+
+        fd.assemble(Courant_num_form, tensor=Courant_num)
+        Courant.assign(Courant_num/Courant_denom)
+        file_gw.write(un, rhon, thetan, delta_rho, delta_theta,
+                      Courant)
         tdump -= dumpt
