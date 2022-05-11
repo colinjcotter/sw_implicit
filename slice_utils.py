@@ -1,5 +1,15 @@
 import firedrake as fd
 import numpy as np
+from firedrake import op2
+
+def maximum(f):
+    fmax = op2.Global(1, [-1000], dtype=float)
+    op2.par_loop(op2.Kernel("""
+static void maxify(double *a, double *b) {
+    a[0] = a[0] < fabs(b[0]) ? fabs(b[0]) : a[0];
+}
+""", "maxify"), f.dof_dset.set, fmax(op2.MAX), f.dat(op2.READ))
+    return fmax.data[0]
 
 def pi_formula(rho, theta, R_d, p_0, kappa):
     return (rho * R_d * theta / p_0) ** (kappa / (1 - kappa))
