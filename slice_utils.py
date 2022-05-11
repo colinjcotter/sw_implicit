@@ -6,7 +6,7 @@ def pi_formula(rho, theta, R_d, p_0, kappa):
 
 def hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary,
                     cp, R_d, p_0, kappa, g, Up,
-                    top = False):
+                    top = False, Pi = None):
     # Calculate hydrostatic Pi, rho
     W_h = Vv * V2
 
@@ -14,14 +14,14 @@ def hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary,
     
     wh = fd.Function(W_h)
     v, rho = wh.split()
-    rho.assign(1.0)
+    rho.assign(rhon)
     v, rho = fd.split(wh)
     dv, drho = fd.TestFunctions(W_h)
 
-    Pi = pi_formula(rho, thetan, R_d, p_0, kappa)
+    Pif = pi_formula(rho, thetan, R_d, p_0, kappa)
 
     rhoeqn = (
-        (cp*fd.inner(v, dv) - cp*fd.div(dv*thetan)*Pi)*fd.dx
+        (cp*fd.inner(v, dv) - cp*fd.div(dv*thetan)*Pif)*fd.dx
         + drho*fd.div(thetan*v)*fd.dx
     )
     
@@ -61,6 +61,9 @@ def hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary,
     v, Rho0 = wh.split()
 
     rhon.assign(Rho0)
+
+    if Pi:
+        Pi.project(pi_formula(rhon, thetan, R_d, p_0, kappa))
 
 def theta_tendency(q, u, theta, n):
     unn = 0.5*(fd.inner(u, n) + abs(fd.inner(u, n)))
@@ -186,7 +189,7 @@ def both(u):
 
     
 def u_eqn(w, n, un, unp1, thetan, thetanp1, rhon, rhonp1,
-          cp, g, R_d, p_0, kappa, Up, dT):
+          cp, g, R_d, p_0, kappa, Up, dT, mu=None):
     """
     Written in a dimension agnostic way
     """
@@ -198,7 +201,7 @@ def u_eqn(w, n, un, unp1, thetan, thetanp1, rhon, rhonp1,
     K = fd.Constant(0.5)*fd.inner(unph, unph)
     Upwind = 0.5*(fd.sign(fd.dot(unph, n))+1)
 
-    return (
+    eqn = (
         fd.inner(w, unp1 - un)*fd.dx
         + dT*fd.inner(unph, curl0(cross1(unph, w)))*fd.dx
         - dT*fd.inner(both(Upwind*unph),
@@ -208,3 +211,7 @@ def u_eqn(w, n, un, unp1, thetan, thetanp1, rhon, rhonp1,
         + dT*cp*fd.jump(w*thetanph, n)*fd.avg(Pinph)*fd.dS_v
         + dT*fd.inner(w, Up)*g*fd.dx
         )
+
+    if mu:
+        eqn += mu*fd.inner(w, Up)*fd.inner(unp1, Up)*fd.dx
+    return eqn

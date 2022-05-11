@@ -68,6 +68,7 @@ Up = fd.as_vector([fd.Constant(0.0), fd.Constant(1.0)]) # up direction
 un, rhon, thetan = Un.split()
 thetan.interpolate(thetab)
 theta_back = fd.Function(Vt).assign(thetan)
+rhon.assign(1.0)
 
 hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary,
                     cp, R_d, p_0, kappa, g, Up,
