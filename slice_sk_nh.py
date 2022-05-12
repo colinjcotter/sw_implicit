@@ -1,7 +1,7 @@
 import firedrake as fd
 from petsc4py import PETSc
 from slice_utils import hydrostatic_rho, pi_formula,\
-    theta_eqn, rho_eqn, u_eqn, both
+        slice_imr_form, both
 import numpy as np
 
 dT = fd.Constant(1)
@@ -83,21 +83,12 @@ sparameters = {
     "ksp_atol": 1e-8,
     "ksp_rtol": 1e-8,
     "ksp_max_it": 400,
-    "pc_type": "mg",
-    "pc_mg_cycle_type": "v",
-    "pc_mg_type": "multiplicative",
-    "mg_levels_ksp_type": "gmres",
-    "mg_levels_ksp_max_it": 2,
-    "mg_levels_pc_type": "python",
-    "mg_levels_pc_python_type": "firedrake.AssembledPC",
-    "mg_levels_assembled_pc_type": "python",
-    "mg_levels_assembled_pc_python_type": "firedrake.ASMStarPC",
-    "mg_levels_assmbled_pc_star_construct_dim": 0,
-    "mg_coarse_pc_type": "python",
-    "mg_coarse_pc_python_type": "firedrake.AssembledPC",
-    "mg_coarse_assembled_pc_type": "lu"
+    "pc_type": "python",
+    "pc_python_type": "firedrake.AssembledPC",
+    "assembled_pc_type": "python",
+    "assembled_pc_python_type": "firedrake.ASMStarPC",
+    "assembled_pc_star_construct_dim": 0,
 }
-
 
 a = fd.Constant(5.0e3)
 deltaTheta = fd.Constant(1.0e-2)
@@ -110,12 +101,10 @@ un, rhon, thetan = fd.split(Un)
 unp1, rhonp1, thetanp1 = fd.split(Unp1)
 
 du, drho, dtheta = fd.TestFunctions(W)
-eqn = (
-    u_eqn(du, n, un, unp1, thetan, thetanp1, rhon, rhonp1,
-          cp, g, R_d, p_0, kappa, Up, dT)
-    + rho_eqn(drho, n, rhon, rhonp1, un, unp1, dT)
-    + theta_eqn(dtheta, n, thetan, thetanp1, un, unp1, Up, dT)
-    )
+eqn = slice_imr_form(un, unp1, rhon, rhonp1, thetan, thetanp1,
+                     du, drho, dtheta,
+                     dT=dT, n=n, Up=Up, c_pen=fd.Constant(2.0**(-7./2)),
+                     cp=cp, g=g, R_d=R_d, p_0=p_0, kappa=kappa)
 
 bcs = [fd.DirichletBC(W.sub(0), 0., "bottom"),
        fd.DirichletBC(W.sub(0), 0., "top")]

@@ -8,10 +8,10 @@ dT = fd.Constant(1)
 tmax = 15000
 
 nlayers = 50  # horizontal layers
-columns = 150  # number of columns
+base_columns = 150  # number of columns
 L = 144e3
 distribution_parameters = {"partition": True, "overlap_type": (fd.DistributedMeshOverlapType.VERTEX, 2)}
-m = fd.PeriodicIntervalMesh(columns, L, distribution_parameters =
+m = fd.PeriodicIntervalMesh(base_columns, L, distribution_parameters =
                             distribution_parameters)
 
 g = fd.Constant(9.810616)
@@ -110,7 +110,8 @@ hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary=fd.Constant(pi_top),
 
 rho_back = fd.Function(V2).assign(rhon)
 
-sparameters = {
+#requires a mesh hierarchy
+mg_sparameters = {
     "snes_converged_reason": None,
     "mat_type": "matfree",
     "ksp_type": "fgmres",
@@ -131,6 +132,21 @@ sparameters = {
     "mg_coarse_pc_type": "python",
     "mg_coarse_pc_python_type": "firedrake.AssembledPC",
     "mg_coarse_assembled_pc_type": "lu"
+}
+
+sparameters = {
+    "snes_converged_reason": None,
+    "mat_type": "matfree",
+    "ksp_type": "fgmres",
+    "ksp_converged_reason": None,
+    "ksp_atol": 1e-8,
+    "ksp_rtol": 1e-8,
+    "ksp_max_it": 400,
+    "pc_type": "python",
+    "pc_python_type": "firedrake.AssembledPC",
+    "assembled_pc_type": "python",
+    "assembled_pc_python_type": "firedrake.ASMStarPC",
+    "assembled_pc_star_construct_dim": 0,
 }
 
 un.project(fd.as_vector([20.0, 0.0]))
