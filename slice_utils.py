@@ -75,23 +75,31 @@ def hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary,
     if Pi:
         Pi.project(pi_formula(rhon, thetan, R_d, p_0, kappa))
 
-def theta_tendency(q, u, theta, n):
+def theta_tendency(q, u, theta, n, Up, c_pen):
     unn = 0.5*(fd.inner(u, n) + abs(fd.inner(u, n)))
-    return (
+
+    #the basic consistent equation with horizontal upwinding
+    eqn = (
         q*fd.inner(u,fd.grad(theta))*fd.dx
         + fd.jump(q)*(unn('+')*theta('+')
                       - unn('-')*theta('-'))*fd.dS_v
         - fd.jump(q*u*theta, n)*fd.dS_v
-    )
+        )
+    #jump stabilisation in the vertical
+    mesh = u.ufl_domain()
+    h = fd.avg(fd.CellVolume(mesh))/fd.FacetArea(mesh)
 
-def theta_eqn(q, n, thetan, thetanp1, un, unp1, Up, dT):
-    thetanph = 0.5*(thetan + thetanp1)
-    unph = 0.5*(un + unp1)
-    qsupg = q + fd.Constant(0.5)*dT*fd.inner(unph, Up)*fd.inner(fd.grad(q), Up)
-    return (
-        qsupg*(thetanp1 - thetan)*fd.dx
-        + dT*theta_tendency(qsupg, unph, thetanph, n)
-    )
+    eqn += (
+        h**2*c_pen*abs(fd.inner(u('+'),n('+')))
+        *fd.jump(fd.inner(fd.grad(theta), Up))
+        *fd.jump(fd.inner(fd.grad(q), Up))*fd.dS_h)
+    return eqn
+
+def theta_mass(q, theta):
+    return q*theta*fd.dx
+
+def rho_mass(q, rho):
+    return q*rho*fd.dx
 
 def rho_tendency(q, rho, u, n):
     unn = 0.5*(fd.inner(u, n) + abs(fd.inner(u, n)))
@@ -101,14 +109,8 @@ def rho_tendency(q, rho, u, n):
                     - unn('-')*rho('-'))*(fd.dS_v + fd.dS_h)
     )
 
-def rho_eqn(q, n, rhon, rhonp1, un, unp1, dT):
-    unph = 0.5*(un + unp1)
-    rhonph = 0.5*(rhon + rhonp1)
-    
-    return (
-        q*(rhonp1 - rhon)*fd.dx
-        + dT*rho_tendency(q, rhonph, unph, n)
-    )
+def u_mass(u, w):
+    return fd.inner(u, w)*fd.dx
 
 def curl0(u):
     """
@@ -197,31 +199,58 @@ def cross0(u, w):
 def both(u):
     return 2*fd.avg(u)
 
-    
-def u_eqn(w, n, un, unp1, thetan, thetanp1, rhon, rhonp1,
-          cp, g, R_d, p_0, kappa, Up, dT, mu=None):
+def u_tendency(w, n, u, theta, rho,
+               cp, g, R_d, p_0, kappa, Up, mu=None):
     """
     Written in a dimension agnostic way
     """
-    unph = 0.5*(un + unp1)
-    thetanph = 0.5*(thetan + thetanp1)
-    rhonph = 0.5*(rhon + rhonp1)
-    Pinph = pi_formula(rhonph, thetanph, R_d, p_0, kappa)
+    Pi = pi_formula(rho, theta, R_d, p_0, kappa)
     
-    K = fd.Constant(0.5)*fd.inner(unph, unph)
-    Upwind = 0.5*(fd.sign(fd.dot(unph, n))+1)
+    K = fd.Constant(0.5)*fd.inner(u, u)
+    Upwind = 0.5*(fd.sign(fd.dot(u, n))+1)
 
     eqn = (
-        fd.inner(w, unp1 - un)*fd.dx
-        + dT*fd.inner(unph, curl0(cross1(unph, w)))*fd.dx
-        - dT*fd.inner(both(Upwind*unph),
-                      both(cross0(n, cross1(unph, w))))*(fd.dS_h + fd.dS_v)
-        - dT*fd.div(w)*K*fd.dx
-        - dT*cp*fd.div(thetanph*w)*Pinph*fd.dx
-        + dT*cp*fd.jump(w*thetanph, n)*fd.avg(Pinph)*fd.dS_v
-        + dT*fd.inner(w, Up)*g*fd.dx
+        + fd.inner(u, curl0(cross1(u, w)))*fd.dx
+        - fd.inner(both(Upwind*u),
+                      both(cross0(n, cross1(u, w))))*(fd.dS_h + fd.dS_v)
+        - fd.div(w)*K*fd.dx
+        - cp*fd.div(theta*w)*Pi*fd.dx
+        + cp*fd.jump(w*theta, n)*fd.avg(Pi)*fd.dS_v
+        + fd.inner(w, Up)*g*fd.dx
         )
 
     if mu:
-        eqn += mu*fd.inner(w, Up)*fd.inner(unp1, Up)*fd.dx
+        eqn += mu*fd.inner(w, Up)*fd.inner(u, Up)*fd.dx
+    return eqn
+
+def get_form_mass():
+    def form_mass(u, rho, theta, du, drho, dtheta):
+        return u_mass(u, du) + rho_mass(rho, drho) + theta_mass(theta, dtheta)
+    return form_mass
+    
+def get_form_function(n, Up, c_pen,
+                      cp, g, R_d, p_0, kappa, mu):
+    def form_function(u, rho, theta, du, drho, dtheta):
+        eqn = theta_tendency(dtheta, u, theta, n, Up, c_pen)
+        eqn += rho_tendency(drho, rho, u, n)
+        eqn += u_tendency(du, n, u, theta, rho,
+                          cp, g, R_d, p_0, kappa, Up, mu)
+        return eqn
+    return form_function
+
+def slice_imr_form(un, unp1, rhon, rhonp1, thetan, thetanp1,
+                   du, drho, dtheta,
+                   dT, n, Up, c_pen,
+                   cp, g, R_d, p_0, kappa, mu=None):
+    form_mass = get_form_mass()
+    form_function = get_form_function(n, Up, c_pen,
+                                      cp, g, R_d, p_0, kappa, mu)
+
+    eqn = form_mass(unp1, rhonp1, thetanp1, du, drho, dtheta)
+    eqn -= form_mass(un, rhon, thetan, du, drho, dtheta)
+    unph = fd.Constant(0.5)*(un + unp1)
+    rhonph = fd.Constant(0.5)*(rhon + rhonp1)
+    thetanph = fd.Constant(0.5)*(thetan + thetanp1)
+    eqn += dT*form_function(unph, rhonph, thetanph,
+                            du, drho, dtheta)
     return eqn

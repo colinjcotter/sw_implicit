@@ -1,7 +1,7 @@
 import firedrake as fd
 from petsc4py import PETSc
 from slice_utils import hydrostatic_rho, pi_formula,\
-    theta_eqn, rho_eqn, u_eqn, both, maximum
+    slice_imr_form, both, maximum
 import numpy as np
 
 dT = fd.Constant(1)
@@ -144,14 +144,12 @@ du, drho, dtheta = fd.TestFunctions(W)
 zc = H-10000.
 mubar = 0.3
 mu_top = fd.conditional(z <= zc, 0.0, mubar*fd.sin((np.pi/2.)*(z-zc)/(H-zc))**2)
-mu = fd.Function(V2).interpolate(mu_top)
+mu = fd.Function(V2).interpolate(mu_top/dT)
 
-eqn = (
-    u_eqn(du, n, un, unp1, thetan, thetanp1, rhon, rhonp1,
-          cp, g, R_d, p_0, kappa, Up, dT, mu)
-    + rho_eqn(drho, n, rhon, rhonp1, un, unp1, dT)
-    + theta_eqn(dtheta, n, thetan, thetanp1, un, unp1, Up, dT)
-    )
+eqn = slice_imr_form(un, unp1, rhon, rhonp1, thetan, thetanp1,
+                     du, drho, dtheta,
+                     dT=dT, n=n, Up=Up, c_pen=fd.Constant(2.0**(-7./2)),
+                     cp=cp, g=g, R_d=R_d, p_0=p_0, kappa=kappa, mu=mu)
 
 bcs = [fd.DirichletBC(W.sub(0), 0., "bottom"),
        fd.DirichletBC(W.sub(0), 0., "top")]
