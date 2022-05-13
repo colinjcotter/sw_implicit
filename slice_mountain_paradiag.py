@@ -114,29 +114,16 @@ hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary=fd.Constant(pi_top),
 
 rho_back = fd.Function(V2).assign(rhon)
 
-form_function = get_form_function(n, Up, c_pen=2.0**(-7./2),
-                                  cp=cp, g=g, R_d=R_d,
-                                  p_0=p_0, kappa=kappa, mu=mu)
-
-form_mass = get_form_mass()
-
 zc = H-10000.
 mubar = 0.3
 mu_top = fd.conditional(z <= zc, 0.0, mubar*fd.sin((np.pi/2.)*(z-zc)/(H-zc))**2)
 mu = fd.Function(V2).interpolate(mu_top/dT)
 
-eqn = slice_imr_form(un, unp1, rhon, rhonp1, thetan, thetanp1,
-                     du, drho, dtheta,
-                     dT=dT, n=n, Up=Up, c_pen=fd.Constant(2.0**(-7./2)),
-                     cp=cp, g=g, R_d=R_d, p_0=p_0, kappa=kappa, mu=mu)
+form_function = get_form_function(n, Up, c_pen=2.0**(-7./2),
+                                  cp=cp, g=g, R_d=R_d,
+                                  p_0=p_0, kappa=kappa, mu=mu)
 
-def form_function(u, h, v, q):
-    eqn = (
-        fd.inner(v, f*perp(u))*fd.dx
-        - fd.div(v)*g*h*fd.dx
-        - q*H*fd.div(u)*fd.dx
-    )
-    return eqn
+form_mass = get_form_mass()
 
 bcs = [fd.DirichletBC(W.sub(0), 0., "bottom"),
        fd.DirichletBC(W.sub(0), 0., "top")]
