@@ -138,6 +138,9 @@ def form_function(u, h, v, q):
     )
     return eqn
 
+bcs = [fd.DirichletBC(W.sub(0), 0., "bottom"),
+       fd.DirichletBC(W.sub(0), 0., "top")]
+
 # Parameters for the diag
 sparameters = {
     "ksp_type": "preonly",
@@ -179,7 +182,8 @@ PD = asQ.paradiag(ensemble=ensemble,
                   form_mass=form_mass, W=W, w0=Un,
                   dt=dt, theta=theta,
                   alpha=alpha,
-                  M=M, solver_parameters=solver_parameters_diag,
+                  M=M, bcs=bcs,
+                  solver_parameters=solver_parameters_diag,
                   circ="quasi",
                   tol=1.0e-6, maxits=None,
                   ctx={}, block_mat_type="aij")
