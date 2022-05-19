@@ -95,14 +95,11 @@ Pi = fd.Function(V2)
 hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary=fd.Constant(0.02),
                     cp=cp, R_d=R_d, p_0=p_0, kappa=kappa, g=g, Up=Up,
                     top=True, Pi=Pi)
-pifile = fd.File('Pi.pvd')
-pifile.write(Pi)
 p0 = maximum(Pi)
 
 hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary=fd.Constant(0.05),
                     cp=cp, R_d=R_d, p_0=p_0, kappa=kappa, g=g, Up=Up,
                     top=True, Pi=Pi)
-pifile.write(Pi)
 p1 = maximum(Pi)
 alpha = 2.*(p1-p0)
 beta = p1-alpha
@@ -113,6 +110,8 @@ hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary=fd.Constant(pi_top),
                     top=True)
 
 rho_back = fd.Function(V2).assign(rhon)
+
+print(rhon.dat.data.min(), "rhon", ensemble.ensemble_comm.rank)
 
 zc = H-10000.
 mubar = 0.3
@@ -130,11 +129,9 @@ bcs = [fd.DirichletBC(W.sub(0), 0., "bottom"),
 
 # Parameters for the diag
 sparameters = {
-    "ksp_type": "preonly",
+    "ksp_type": "gmres",
+    "ksp_monitor": None,
     "ksp_converged_reason": None,
-    "ksp_atol": 1e-8,
-    "ksp_rtol": 1e-8,
-    "ksp_max_it": 400,
     "pc_type": "python",
     "pc_python_type": "firedrake.AssembledPC",
     "assembled_pc_type": "python",
@@ -142,19 +139,29 @@ sparameters = {
     "assembled_pc_star_construct_dim": 0,
 }
 
+lu_parameters = {
+    "ksp_type": "preonly",
+    "pc_type": "python",
+    "pc_python_type": "firedrake.AssembledPC",
+    "assembled_pc_type": "lu"
+}
+
 solver_parameters_diag = {
+    "ksp_type": "gmres",
+    "ksp_converged_reason": None,
+    "ksp_atol": 1e-8,
+    "ksp_rtol": 1e-8,
+    "ksp_max_it": 400,
     "snes_linesearch_type": "basic",
     'snes_monitor': None,
     'snes_converged_reason': None,
     'mat_type': 'matfree',
-    'ksp_type': 'gmres',
-    'ksp_monitor': None,
     'pc_type': 'python',
     'pc_python_type': 'asQ.DiagFFTPC'}
 
 M = [2, 2, 2, 2]
 for i in range(np.sum(M)):
-    solver_parameters_diag["diagfft_"+str(i)+"_"] = sparameters
+    solver_parameters_diag["diagfft_"+str(i)+"_"] = lu_parameters
 
 dt = 5
 dT.assign(dt)
