@@ -7,8 +7,8 @@ from slice_utils import hydrostatic_rho, pi_formula,\
 dT = fd.Constant(1)
 tmax = 15000
 
-nlayers = 50  # horizontal layers
-base_columns = 150  # number of columns
+nlayers = 20  # horizontal layers
+base_columns = 40  # number of columns
 L = 144e3
 distribution_parameters = {"partition": True, "overlap_type": (fd.DistributedMeshOverlapType.VERTEX, 2)}
 
@@ -99,7 +99,8 @@ p0 = maximum(Pi)
 
 hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary=fd.Constant(0.05),
                     cp=cp, R_d=R_d, p_0=p_0, kappa=kappa, g=g, Up=Up,
-                    top=True, Pi=Pi)
+
+                top=True, Pi=Pi)
 p1 = maximum(Pi)
 alpha = 2.*(p1-p0)
 beta = p1-alpha
@@ -110,8 +111,6 @@ hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary=fd.Constant(pi_top),
                     top=True)
 
 rho_back = fd.Function(V2).assign(rhon)
-
-print(rhon.dat.data.min(), "rhon", ensemble.ensemble_comm.rank)
 
 zc = H-10000.
 mubar = 0.3
@@ -124,13 +123,13 @@ form_function = get_form_function(n, Up, c_pen=2.0**(-7./2),
 
 form_mass = get_form_mass()
 
-bcs = [fd.DirichletBC(W.sub(0), 0., "bottom"),
-       fd.DirichletBC(W.sub(0), 0., "top")]
+zv = fd.as_vector([fd.Constant(0.), fd.Constant(0.)])
+bcs = [fd.DirichletBC(W.sub(0), zv, "bottom"),
+       fd.DirichletBC(W.sub(0), zv, "top")]
 
 # Parameters for the diag
 sparameters = {
     "ksp_type": "gmres",
-    "ksp_monitor": None,
     "ksp_converged_reason": None,
     "pc_type": "python",
     "pc_python_type": "firedrake.AssembledPC",
@@ -143,11 +142,12 @@ lu_parameters = {
     "ksp_type": "preonly",
     "pc_type": "python",
     "pc_python_type": "firedrake.AssembledPC",
-    "assembled_pc_type": "lu"
+    "assembled_pc_type": "jacobi"
 }
 
 solver_parameters_diag = {
-    "ksp_type": "gmres",
+    "ksp_type": "preonly",
+    "ksp_view": None,
     "ksp_converged_reason": None,
     "ksp_atol": 1e-8,
     "ksp_rtol": 1e-8,
@@ -161,7 +161,7 @@ solver_parameters_diag = {
 
 M = [2, 2, 2, 2]
 for i in range(np.sum(M)):
-    solver_parameters_diag["diagfft_"+str(i)+"_"] = lu_parameters
+    solver_parameters_diag["diagfft_"+str(i)+"_"] = sparameters
 
 dt = 5
 dT.assign(dt)
