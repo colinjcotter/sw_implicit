@@ -3,12 +3,13 @@ import asQ
 import numpy as np
 from slice_utils import hydrostatic_rho, pi_formula,\
     get_form_mass, get_form_function, both, maximum
+from petsc4py import PETSc
 
 dT = fd.Constant(1)
 tmax = 15000
 
-nlayers = 20  # horizontal layers
-base_columns = 40  # number of columns
+nlayers = 50  # horizontal layers
+base_columns = 150  # number of columns
 L = 144e3
 distribution_parameters = {"partition": True, "overlap_type": (fd.DistributedMeshOverlapType.VERTEX, 2)}
 
@@ -86,6 +87,7 @@ cp = fd.Constant(1004.5)  # SHC of dry air at const. pressure (J/kg/K)
 Up = fd.as_vector([fd.Constant(0.0), fd.Constant(1.0)]) # up direction
 
 un, rhon, thetan = Un.split()
+un.project(fd.as_vector([20.0, 0.0]))
 thetan.interpolate(thetab)
 theta_back = fd.Function(Vt).assign(thetan)
 rhon.assign(1.0e-5)
@@ -126,6 +128,9 @@ form_mass = get_form_mass()
 zv = fd.as_vector([fd.Constant(0.), fd.Constant(0.)])
 bcs = [fd.DirichletBC(W.sub(0), zv, "bottom"),
        fd.DirichletBC(W.sub(0), zv, "top")]
+
+for bc in bcs:
+    bc.apply(Un)
 
 # Parameters for the diag
 sparameters = {
@@ -181,4 +186,41 @@ PD = asQ.paradiag(ensemble=ensemble,
                   circ="quasi",
                   tol=1.0e-6, maxits=None,
                   ctx={}, block_mat_type="aij")
-PD.solve()
+
+r = PD.rT
+
+# only last slice does diagnostics/output
+if PD.rT == len(M)-1:
+
+    uout = fd.Function(V1, name='velocity')
+    thetaout = fd.Function(Vt, name='temperature')
+    rhoout = fd.Function(V2, name='density')
+
+    ofile = fd.File('slice_mountain_diag.pvd',
+                    comm=ensemble.comm)
+
+    def assign_out_functions():
+        uout.assign(PD.w_all.split()[-3])
+        rhoout.assign(PD.w_all.split()[-2])
+        thetaout.assign(PD.w_all.split()[-1] - theta_back)
+        
+    def write_to_file():
+        ofile.write(uout, rhoout, thetaout)
+
+
+def window_preproc(pdg, wndw):
+    PETSc.Sys.Print('')
+    PETSc.Sys.Print(f'### === --- Calculating time-window {wndw} --- === ###')
+    PETSc.Sys.Print('')
+
+
+def window_postproc(pdg, wndw):
+    # postprocess this timeslice
+    if r == len(M)-1:
+        assign_out_functions()
+        write_to_file()
+
+# solve for each window
+PD.solve(nwindows=100,
+         preproc=window_preproc,
+         postproc=window_postproc)
