@@ -138,10 +138,10 @@ lines_parameters = {
     "pc_type": "python",
     "pc_python_type": "firedrake.AssembledPC",
     "assembled_pc_type": "python",
-    "assembled_pc_python_type": "firedrake.ASMStarPC",
-    "assembled_pc_star_construct_dim": 0,
-    #"assembled_pc_vanka_sub_sub_pc_type": "lu",
-    #"assembled_pc_vanka_sub_sub_pc_factor_mat_solver_type" : 'mumps',
+    "assembled_pc_python_type": "firedrake.ASMVankaPC",
+    "assembled_pc_vanka_construct_dim": 0,
+    "assembled_pc_vanka_sub_sub_pc_type": "lu",
+    "assembled_pc_vanka_sub_sub_pc_factor_mat_solver_type" : 'mumps',
 }
 
 lu_parameters = {
@@ -199,7 +199,7 @@ dT.assign(dt)
 
 t = 0.
 
-alpha = 1.0e-3
+alpha = 1.0e-4
 theta = 0.5
 
 PD = asQ.paradiag(ensemble=ensemble,
