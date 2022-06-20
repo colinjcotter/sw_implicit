@@ -6,7 +6,6 @@ from slice_utils import hydrostatic_rho, pi_formula,\
 from petsc4py import PETSc
 
 dT = fd.Constant(1)
-tmax = 15000
 
 nlayers = 50  # horizontal layers
 base_columns = 150  # number of columns
@@ -14,7 +13,7 @@ L = 144e3
 distribution_parameters = {"partition": True, "overlap_type": (fd.DistributedMeshOverlapType.VERTEX, 2)}
 
 # set up the ensemble communicator for space-time parallelism
-nspatial_domains = 2
+nspatial_domains = 4
 ensemble = fd.Ensemble(fd.COMM_WORLD, nspatial_domains)
 m = fd.PeriodicIntervalMesh(base_columns, L, distribution_parameters =
                             distribution_parameters,
@@ -133,7 +132,7 @@ for bc in bcs:
     bc.apply(Un)
 
 # Parameters for the diag
-sparameters = {
+lines_parameters = {
     "ksp_type": "gmres",
     "ksp_converged_reason": None,
     "pc_type": "python",
@@ -141,6 +140,8 @@ sparameters = {
     "assembled_pc_type": "python",
     "assembled_pc_python_type": "firedrake.ASMStarPC",
     "assembled_pc_star_construct_dim": 0,
+    #"assembled_pc_vanka_sub_sub_pc_type": "lu",
+    #"assembled_pc_vanka_sub_sub_pc_factor_mat_solver_type" : 'mumps',
 }
 
 lu_parameters = {
@@ -150,14 +151,39 @@ lu_parameters = {
     "assembled_pc_type": "jacobi"
 }
 
-solver_parameters_diag = {
-    "ksp_type": "preonly",
-    "ksp_view": None,
+mg_sparameters = {
+    "mat_type": "matfree",
+    "ksp_type": "fgmres",
+    "ksp_monitor_true_residual": None,
     "ksp_converged_reason": None,
     "ksp_atol": 1e-8,
     "ksp_rtol": 1e-8,
     "ksp_max_it": 400,
-    "snes_linesearch_type": "basic",
+    "pc_type": "mg",
+    "pc_mg_cycle_type": "v",
+    "pc_mg_type": "multiplicative",
+    "mg_levels_ksp_type": "gmres",
+    "mg_levels_ksp_max_it": 3,
+    #"mg_levels_ksp_convergence_test": "skip",
+    "mg_levels_pc_type": "python",
+    "mg_levels_pc_python_type": "firedrake.AssembledPC",
+    "mg_levels_assembled_pc_type": "python",
+    "mg_levels_assembled_pc_python_type": "firedrake.ASMStarPC",
+    "mg_levels_assembled_pc_star_construct_dim": 0,
+    "mg_coarse_pc_type": "python",
+    "mg_coarse_pc_python_type": "firedrake.AssembledPC",
+    "mg_coarse_assembled_pc_type": "lu",
+    "mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
+}
+
+solver_parameters_diag = {
+    "ksp_type": "fgmres",
+    "ksp_monitor": None,
+    "ksp_converged_reason": None,
+    "ksp_atol": 1e-8,
+    "ksp_rtol": 1e-8,
+    "ksp_max_it": 400,
+    #"snes_linesearch_type": "basic",
     'snes_monitor': None,
     'snes_converged_reason': None,
     'mat_type': 'matfree',
@@ -166,7 +192,7 @@ solver_parameters_diag = {
 
 M = [2, 2, 2, 2]
 for i in range(np.sum(M)):
-    solver_parameters_diag["diagfft_"+str(i)+"_"] = sparameters
+    solver_parameters_diag["diagfft_"+str(i)+"_"] = lines_parameters
 
 dt = 5
 dT.assign(dt)
@@ -183,7 +209,7 @@ PD = asQ.paradiag(ensemble=ensemble,
                   alpha=alpha,
                   M=M, bcs=bcs,
                   solver_parameters=solver_parameters_diag,
-                  circ="quasi",
+                  circ="none",
                   tol=1.0e-6, maxits=None,
                   ctx={}, block_mat_type="aij")
 
@@ -201,7 +227,8 @@ if PD.rT == len(M)-1:
 
     def assign_out_functions():
         uout.assign(PD.w_all.split()[-3])
-        rhoout.assign(PD.w_all.split()[-2])
+        PETSc.Sys.Print("uout", uout.dat.data[:].max())
+        rhoout.assign(PD.w_all.split()[-2] - rho_back)
         thetaout.assign(PD.w_all.split()[-1] - theta_back)
         
     def write_to_file():
@@ -221,6 +248,6 @@ def window_postproc(pdg, wndw):
         write_to_file()
 
 # solve for each window
-PD.solve(nwindows=100,
+PD.solve(nwindows=5,
          preproc=window_preproc,
          postproc=window_postproc)

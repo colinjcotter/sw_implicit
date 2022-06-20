@@ -5,7 +5,6 @@ from slice_utils import hydrostatic_rho, pi_formula,\
 import numpy as np
 
 dT = fd.Constant(1)
-tmax = 15000
 
 nlayers = 50  # horizontal layers
 base_columns = 150  # number of columns
@@ -136,8 +135,10 @@ mg_sparameters = {
 
 sparameters = {
     "snes_converged_reason": None,
+    "snes_monitor": None,
+    "snes_stol": 1.0e-50,
     "mat_type": "matfree",
-    "ksp_type": "fgmres",
+    "ksp_type": "gmres",
     "ksp_converged_reason": None,
     "ksp_atol": 1e-8,
     "ksp_rtol": 1e-8,
@@ -145,8 +146,10 @@ sparameters = {
     "pc_type": "python",
     "pc_python_type": "firedrake.AssembledPC",
     "assembled_pc_type": "python",
-    "assembled_pc_python_type": "firedrake.ASMStarPC",
-    "assembled_pc_star_construct_dim": 0,
+    "assembled_pc_python_type": "firedrake.ASMVankaPC",
+    "assembled_pc_vanka_construct_dim": 0,
+    #"assembled_pc_vanka_sub_pc_type": "lu",
+    #"assembled_pc_vanka_sub_pc_factor_mat_solver_type" : 'superlu_dist',
 }
 
 un.project(fd.as_vector([20.0, 0.0]))
@@ -181,6 +184,7 @@ delta_theta = fd.Function(Vt, name="delta theta").assign(thetan-theta_back)
 delta_rho = fd.Function(V2, name="delta rho").assign(rhon-rho_back)
 
 dt = 5
+tmax = 5
 dT.assign(dt)
 
 DG0 = fd.FunctionSpace(mesh, "DG", 0)

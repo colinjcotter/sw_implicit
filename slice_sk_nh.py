@@ -75,7 +75,7 @@ hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary,
                     top = False)
 rho_back = fd.Function(V2).assign(rhon)
 
-sparameters = {
+lines_parameters = {
     "snes_converged_reason": None,
     "mat_type": "matfree",
     "ksp_type": "fgmres",
@@ -88,6 +88,33 @@ sparameters = {
     "assembled_pc_type": "python",
     "assembled_pc_python_type": "firedrake.ASMStarPC",
     "assembled_pc_star_construct_dim": 0,
+}
+
+mg_sparameters = {
+    "snes_monitor": None,
+    "mat_type": "matfree",
+    "ksp_type": "fgmres",
+    "ksp_monitor_true_residual": None,
+    "ksp_converged_reason": None,
+    "ksp_atol": 1e-8,
+    "ksp_rtol": 1e-8,
+    "ksp_max_it": 400,
+    "pc_type": "mg",
+    "pc_mg_cycle_type": "v",
+    "pc_mg_type": "multiplicative",
+    "mg_levels_ksp_type": "gmres",
+    "mg_levels_ksp_max_it": 3,
+    #"mg_levels_ksp_convergence_test": "skip",
+    "mg_levels_pc_type": "python",
+    "mg_levels_pc_python_type": "firedrake.AssembledPC",
+    "mg_levels_assembled_pc_type": "python",
+    "mg_levels_assembled_pc_python_type": "firedrake.ASMStarPC",
+    "mg_levels_assembled_pc_star_construct_dim": 0,
+    "mg_levels_pc_python_type": "firedrake.PatchPC",
+    "mg_coarse_pc_type": "python",
+    "mg_coarse_pc_python_type": "firedrake.AssembledPC",
+    "mg_coarse_assembled_pc_type": "lu",
+    "mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
 }
 
 a = fd.Constant(5.0e3)
@@ -111,7 +138,8 @@ bcs = [fd.DirichletBC(W.sub(0), 0., "bottom"),
 
 nprob = fd.NonlinearVariationalProblem(eqn, Unp1, bcs=bcs)
 
-nsolver = fd.NonlinearVariationalSolver(nprob, solver_parameters=sparameters,
+nsolver = fd.NonlinearVariationalSolver(nprob, solver_parameters=
+                                        lines_sparameters,
                                         options_prefix="nsolver")
     
 name = "gw_imp"
