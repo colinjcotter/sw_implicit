@@ -66,7 +66,9 @@ Tsurf = fd.Constant(300.)
 thetab = Tsurf*fd.exp(N**2*z/g)
 
 cp = fd.Constant(1004.5)  # SHC of dry air at const. pressure (J/kg/K)
-Up = fd.as_vector([fd.Constant(0.0), fd.Constant(1.0)]) # up direction
+Up = fd.as_vector([fd.Constant(0.0),
+                   fd.Constant(0.0),
+                   fd.Constant(1.0)]) # up direction
 
 un, rhon, thetan = Un.split()
 thetan.interpolate(thetab)

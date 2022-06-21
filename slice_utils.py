@@ -42,10 +42,13 @@ def hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary,
         bmeasure = fd.ds_b
         bstring = "top"
 
+    zeros = []
+    for i in range(Up.ufl_shape[0]):
+        zeros.append(fd.Constant(0.))
+
     rhoeqn += cp*fd.inner(dv, n)*thetan*pi_boundary*bmeasure
     rhoeqn += g*fd.inner(dv, Up)*fd.dx
-    bcs = [fd.DirichletBC(W_h.sub(0), fd.as_vector([fd.Constant(0.0),
-                                                    fd.Constant(0.0)]), bstring)]
+    bcs = [fd.DirichletBC(W_h.sub(0), zeros, bstring)]
 
     RhoProblem = fd.NonlinearVariationalProblem(rhoeqn, wh, bcs=bcs)
 
