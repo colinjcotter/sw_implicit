@@ -177,6 +177,8 @@ mg_sparameters = {
 }
 
 solver_parameters_diag = {
+    "snes_lag_preconditioner_persists": None,
+    "snes_lag_preconditioner": 4,
     "ksp_type": "fgmres",
     "ksp_monitor": None,
     "ksp_converged_reason": None,

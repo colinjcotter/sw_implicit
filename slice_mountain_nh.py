@@ -90,6 +90,7 @@ Pi = fd.Function(V2)
 hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary=fd.Constant(0.02),
                     cp=cp, R_d=R_d, p_0=p_0, kappa=kappa, g=g, Up=Up,
                     top=True, Pi=Pi)
+p0 = maximum(Pi)
 
 hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary=fd.Constant(0.05),
                     cp=cp, R_d=R_d, p_0=p_0, kappa=kappa, g=g, Up=Up,
@@ -202,7 +203,7 @@ Unp1.assign(Un)
 t = 0.
 dumpt = 500.
 tdump = 0.
-tmax = 20.5*dt
+tmax = 9000.
 
 PETSc.Sys.Print('tmax', tmax, 'dt', dt)
 while t < tmax - 0.5*dt:
