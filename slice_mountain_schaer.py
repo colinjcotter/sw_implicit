@@ -147,7 +147,7 @@ sparameters = {
     "assembled_pc_vanka_sub_sub_pc_factor_mat_ordering_type": "rcm"
 }
 
-un.project(fd.as_vector([20.0, 0.0]))
+un.project(fd.as_vector([10.0, 0.0]))
 
 #The timestepping solver
 un, rhon, thetan = fd.split(Un)
@@ -156,7 +156,7 @@ unp1, rhonp1, thetanp1 = fd.split(Unp1)
 du, drho, dtheta = fd.TestFunctions(W)
 
 zc = H-10000.
-mubar = 0.3
+mubar = 0.15
 mu_top = fd.conditional(z <= zc, 0.0, mubar*fd.sin((np.pi/2.)*(z-zc)/(H-zc))**2)
 mu = fd.Function(V2).interpolate(mu_top/dT)
 
