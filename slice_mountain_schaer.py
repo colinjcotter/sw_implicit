@@ -32,7 +32,7 @@ a = 1000.
 xc = L/2.
 x, z = fd.SpatialCoordinate(mesh)
 hm = 250.
-zs = hm*fd.exp(-(x/5000)**2)*fd.cos(fd.pi*x/4000)**2
+zs = hm*fd.exp(-((x-L/2)/5000)**2)*fd.cos(fd.pi*(x-L/2)/4000)**2
 
 smooth_z = False
 name = "schaer"
@@ -203,7 +203,7 @@ Unp1.assign(Un)
 t = 0.
 dumpt = 500.
 tdump = 0.
-tmax = 4*dt
+tmax = 2.0*60*60
 
 PETSc.Sys.Print('tmax', tmax, 'dt', dt)
 while t < tmax - 0.5*dt:
