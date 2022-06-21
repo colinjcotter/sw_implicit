@@ -90,14 +90,11 @@ Pi = fd.Function(V2)
 hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary=fd.Constant(0.02),
                     cp=cp, R_d=R_d, p_0=p_0, kappa=kappa, g=g, Up=Up,
                     top=True, Pi=Pi)
-pifile = fd.File('Pi.pvd')
-pifile.write(Pi)
-p0 = maximum(Pi)
 
 hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary=fd.Constant(0.05),
                     cp=cp, R_d=R_d, p_0=p_0, kappa=kappa, g=g, Up=Up,
                     top=True, Pi=Pi)
-pifile.write(Pi)
+
 p1 = maximum(Pi)
 alpha = 2.*(p1-p0)
 beta = p1-alpha
@@ -135,8 +132,6 @@ mg_sparameters = {
 
 sparameters = {
     "snes_converged_reason": None,
-    "snes_monitor": None,
-    "snes_stol": 1.0e-50,
     "mat_type": "matfree",
     "ksp_type": "gmres",
     "ksp_converged_reason": None,
@@ -148,8 +143,7 @@ sparameters = {
     "assembled_pc_type": "python",
     "assembled_pc_python_type": "firedrake.ASMVankaPC",
     "assembled_pc_vanka_construct_dim": 0,
-    #"assembled_pc_vanka_sub_pc_type": "lu",
-    #"assembled_pc_vanka_sub_pc_factor_mat_solver_type" : 'superlu_dist',
+    "assembled_pc_vanka_sub_sub_pc_factor_mat_ordering_type": "rcm"
 }
 
 un.project(fd.as_vector([20.0, 0.0]))
@@ -184,7 +178,6 @@ delta_theta = fd.Function(Vt, name="delta theta").assign(thetan-theta_back)
 delta_rho = fd.Function(V2, name="delta rho").assign(rhon-rho_back)
 
 dt = 5
-tmax = 5
 dT.assign(dt)
 
 DG0 = fd.FunctionSpace(mesh, "DG", 0)
@@ -209,6 +202,7 @@ Unp1.assign(Un)
 t = 0.
 dumpt = 500.
 tdump = 0.
+tmax = 20.5*dt
 
 PETSc.Sys.Print('tmax', tmax, 'dt', dt)
 while t < tmax - 0.5*dt:
