@@ -59,7 +59,7 @@ W = V1 * V2 * Vt #velocity, density, temperature
 Un = fd.Function(W)
 Unp1 = fd.Function(W)
 
-x, z = fd.SpatialCoordinate(mesh)
+x, y, z = fd.SpatialCoordinate(mesh)
 
 # N^2 = (g/theta)dtheta/dz => dtheta/dz = theta N^2g => theta=theta_0exp(N^2gz)
 Tsurf = fd.Constant(300.)
