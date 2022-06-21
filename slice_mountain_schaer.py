@@ -31,11 +31,11 @@ n = fd.FacetNormal(mesh)
 a = 1000.
 xc = L/2.
 x, z = fd.SpatialCoordinate(mesh)
-hm = 1.
-zs = hm*a**2/((x-xc)**2 + a**2)
+hm = 250.
+zs = hm*fd.exp(-(x/5000)**2)*fd.cos(fd.pi*x/4000)**2
 
 smooth_z = False
-name = "mount_schaer"
+name = "schaer"
 if smooth_z:
     name += '_smootherz'
     zh = 5000.
@@ -178,7 +178,7 @@ un, rhon, thetan = Un.split()
 delta_theta = fd.Function(Vt, name="delta theta").assign(thetan-theta_back)
 delta_rho = fd.Function(V2, name="delta rho").assign(rhon-rho_back)
 
-dt = 5
+dt = 4
 dT.assign(dt)
 
 DG0 = fd.FunctionSpace(mesh, "DG", 0)
@@ -203,7 +203,7 @@ Unp1.assign(Un)
 t = 0.
 dumpt = 500.
 tdump = 0.
-tmax = 9000.
+tmax = 4*dt
 
 PETSc.Sys.Print('tmax', tmax, 'dt', dt)
 while t < tmax - 0.5*dt:
