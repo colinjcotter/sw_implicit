@@ -203,7 +203,7 @@ Unp1.assign(Un)
 t = 0.
 dumpt = 500.
 tdump = 0.
-tmax = 2.0*60*60
+tmax = 5.0*60*60
 
 PETSc.Sys.Print('tmax', tmax, 'dt', dt)
 while t < tmax - 0.5*dt:

@@ -34,7 +34,7 @@ def hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary,
         (cp*fd.inner(v, dv) - cp*fd.div(dv*thetan)*Pif)*fd.dx
         + drho*fd.div(thetan*v)*fd.dx
     )
-    
+
     if top:
         bmeasure = fd.ds_t
         bstring = "bottom"
@@ -50,24 +50,21 @@ def hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary,
     rhoeqn += g*fd.inner(dv, Up)*fd.dx
     bcs = [fd.DirichletBC(W_h.sub(0), zeros, bstring)]
 
+    rhoeqn_mod = rhoeqn + drho*rho*fd.dx
+    Jp = fd.derivative(rhoeqn_mod, wh)
+
     RhoProblem = fd.NonlinearVariationalProblem(rhoeqn, wh, bcs=bcs)
 
-    schur_params = {'ksp_type': 'gmres',
-                    'pc_type': 'fieldsplit',
-                    'pc_fieldsplit_type': 'schur',
-                    'pc_fieldsplit_schur_fact_type': 'full',
-                    'pc_fieldsplit_schur_precondition': 'selfp',
-                    'fieldsplit_1_ksp_type': 'preonly',
-                    'fieldsplit_1_pc_type': 'gamg',
-                    'fieldsplit_1_mg_levels_pc_type': 'bjacobi',
-                    'fieldsplit_1_mg_levels_sub_pc_type': 'ilu',
-                    'fieldsplit_0_ksp_type': 'richardson',
-                    'fieldsplit_0_ksp_max_it': 4,
-                    'ksp_atol': 1.e-08,
-                    'ksp_rtol': 1.e-08}
+    lu_params = {
+        'snes_converged_reason': None,
+        'mat_type': 'aij',
+        'pc_type': 'lu',
+        "pc_factor_mat_ordering_type": "rcm",
+        "pc_factor_mat_solver_type": "mumps"
+    }
 
     RhoSolver = fd.NonlinearVariationalSolver(RhoProblem,
-                                              solver_parameters=schur_params,
+                                              solver_parameters=lu_params,
                                               options_prefix="rhosolver")
 
     RhoSolver.solve()
