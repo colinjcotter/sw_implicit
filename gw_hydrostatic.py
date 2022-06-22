@@ -141,7 +141,9 @@ a = fd.Constant(100.0e3)
 deltaTheta = fd.Constant(1.0e-2)
 theta_pert = deltaTheta*fd.sin(np.pi*z/H)/(1 + (x - L/2)**2/a**2)
 thetan.interpolate(thetan + theta_pert)
-un.project(fd.as_vector([20.0, 0.0]))
+un.project(fd.as_vector([fd.Constant(20.0),
+                         fd.Constant(0.0),
+                         fd.Constant(0.0)]))
 
 #The timestepping solver
 un, rhon, thetan = fd.split(Un)
