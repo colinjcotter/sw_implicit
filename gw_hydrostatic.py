@@ -150,11 +150,11 @@ un, rhon, thetan = fd.split(Un)
 unp1, rhonp1, thetanp1 = fd.split(Unp1)
 
 du, drho, dtheta = fd.TestFunctions(W)
-
+f = fd.Constant(1.0e-4)
 eqn = slice_imr_form(un, unp1, rhon, rhonp1, thetan, thetanp1,
                      du, drho, dtheta,
                      dT=dT, n=n, Up=Up, c_pen=fd.Constant(2.0**(-7./2)),
-                     f = fd.Constant(1.0e-4),
+                     f = f,
                      F = fd.as_vector([fd.Constant(0.),
                                        -f*fd.Constant(20.0),
                                        fd.Constant(0.)]),
