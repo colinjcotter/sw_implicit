@@ -14,6 +14,9 @@ static void maxify(double *a, double *b) {
 def pi_formula(rho, theta, R_d, p_0, kappa):
     return (rho * R_d * theta / p_0) ** (kappa / (1 - kappa))
 
+def rho_formula(pi, theta, R_d, p_0, kappa):
+    return p_0*pi**((1-kappa)/kappa)/R_d/theta
+
 def hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary,
                     cp, R_d, p_0, kappa, g, Up,
                     top = False, Pi = None):
@@ -200,7 +203,8 @@ def both(u):
     return 2*fd.avg(u)
 
 def u_tendency(w, n, u, theta, rho,
-               cp, g, R_d, p_0, kappa, Up, mu=None):
+               cp, g, R_d, p_0, kappa, Up,
+               mu=None, f=None, F=None):
     """
     Written in a dimension agnostic way
     """
@@ -219,8 +223,12 @@ def u_tendency(w, n, u, theta, rho,
         + fd.inner(w, Up)*g*fd.dx
         )
 
-    if mu:
+    if mu: # Newtonian dissipation in vertical
         eqn += mu*fd.inner(w, Up)*fd.inner(u, Up)*fd.dx
+    if f: # Coriolis term
+        eqn += f*fd.inner(w, cross(Up, u))*fd.dx
+    if F: # additional source term
+        eqn += fd.inner(w, F)*fd.dx
     return eqn
 
 def get_form_mass():

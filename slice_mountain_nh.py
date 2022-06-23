@@ -35,7 +35,7 @@ hm = 1.
 zs = hm*a**2/((x-xc)**2 + a**2)
 
 smooth_z = False
-name = "mount_schaer"
+name = "mount_agnesi"
 if smooth_z:
     name += '_smootherz'
     zh = 5000.

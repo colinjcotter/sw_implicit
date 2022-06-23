@@ -11,7 +11,7 @@ base_columns = 150  # number of columns
 L = 6000e3
 distribution_parameters = {"partition": True, "overlap_type": (fd.DistributedMeshOverlapType.VERTEX, 2)}
 
-m = fd.PeriodicRectangleMesh(base_columns, ny=1, Lx=L, Ly=0.01*L,
+m = fd.PeriodicRectangleMesh(base_columns, ny=1, Lx=L, Ly=1.0e-3*L,
                              direction="both",
                              quadrilateral=True,
                              distribution_parameters=distribution_parameters)
@@ -115,7 +115,7 @@ mg_sparameters = {
     "mg_levels_pc_python_type": "firedrake.AssembledPC",
     "mg_levels_assembled_pc_type": "python",
     "mg_levels_assembled_pc_python_type": "firedrake.ASMStarPC",
-    "mg_levels_assmbled_pc_star_construct_dim": 0,
+    "mg_levels_assembled_pc_star_construct_dim": 0,
     "mg_coarse_pc_type": "python",
     "mg_coarse_pc_python_type": "firedrake.AssembledPC",
     "mg_coarse_assembled_pc_type": "lu"
@@ -154,6 +154,10 @@ du, drho, dtheta = fd.TestFunctions(W)
 eqn = slice_imr_form(un, unp1, rhon, rhonp1, thetan, thetanp1,
                      du, drho, dtheta,
                      dT=dT, n=n, Up=Up, c_pen=fd.Constant(2.0**(-7./2)),
+                     f = fd.Constant(1.0e-4),
+                     F = fd.as_vector([fd.Constant(0.),
+                                       -f*fd.Constant(20.0),
+                                       fd.Constant(0.)])
                      cp=cp, g=g, R_d=R_d, p_0=p_0, kappa=kappa, mu=None)
 
 bcs = [fd.DirichletBC(W.sub(0), 0., "bottom"),
@@ -169,7 +173,7 @@ un, rhon, thetan = Un.split()
 delta_theta = fd.Function(Vt, name="delta theta").assign(thetan-theta_back)
 delta_rho = fd.Function(V2, name="delta rho").assign(rhon-rho_back)
 
-dt = 4
+dt = 50
 dT.assign(dt)
 
 DG0 = fd.FunctionSpace(mesh, "DG", 0)
@@ -194,7 +198,7 @@ Unp1.assign(Un)
 t = 0.
 dumpt = 500.
 tdump = 0.
-tmax = 4*dt
+tmax = 60000.
 
 PETSc.Sys.Print('tmax', tmax, 'dt', dt)
 while t < tmax - 0.5*dt:
