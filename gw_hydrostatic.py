@@ -154,11 +154,11 @@ f = fd.Constant(1.0e-4)
 eqn = slice_imr_form(un, unp1, rhon, rhonp1, thetan, thetanp1,
                      du, drho, dtheta,
                      dT=dT, n=n, Up=Up, c_pen=fd.Constant(2.0**(-7./2)),
+                     cp=cp, g=g, R_d=R_d, p_0=p_0, kappa=kappa, mu=None,
                      f = f,
                      F = fd.as_vector([fd.Constant(0.),
                                        -f*fd.Constant(20.0),
-                                       fd.Constant(0.)]),
-                     cp=cp, g=g, R_d=R_d, p_0=p_0, kappa=kappa, mu=None)
+                                       fd.Constant(0.)]))
 
 bcs = [fd.DirichletBC(W.sub(0), 0., "bottom"),
        fd.DirichletBC(W.sub(0), 0., "top")]

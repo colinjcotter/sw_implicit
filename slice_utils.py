@@ -226,7 +226,7 @@ def u_tendency(w, n, u, theta, rho,
     if mu: # Newtonian dissipation in vertical
         eqn += mu*fd.inner(w, Up)*fd.inner(u, Up)*fd.dx
     if f: # Coriolis term
-        eqn += f*fd.inner(w, cross(Up, u))*fd.dx
+        eqn += f*fd.inner(w, fd.cross(Up, u))*fd.dx
     if F: # additional source term
         eqn += fd.inner(w, F)*fd.dx
     return eqn
@@ -237,22 +237,22 @@ def get_form_mass():
     return form_mass
     
 def get_form_function(n, Up, c_pen,
-                      cp, g, R_d, p_0, kappa, mu):
+                      cp, g, R_d, p_0, kappa, mu, f, F):
     def form_function(u, rho, theta, du, drho, dtheta):
         eqn = theta_tendency(dtheta, u, theta, n, Up, c_pen)
         eqn += rho_tendency(drho, rho, u, n)
         eqn += u_tendency(du, n, u, theta, rho,
-                          cp, g, R_d, p_0, kappa, Up, mu)
+                          cp, g, R_d, p_0, kappa, Up, mu, f, F)
         return eqn
     return form_function
 
 def slice_imr_form(un, unp1, rhon, rhonp1, thetan, thetanp1,
                    du, drho, dtheta,
                    dT, n, Up, c_pen,
-                   cp, g, R_d, p_0, kappa, mu=None):
+                   cp, g, R_d, p_0, kappa, mu=None, f=None, F=None):
     form_mass = get_form_mass()
     form_function = get_form_function(n, Up, c_pen,
-                                      cp, g, R_d, p_0, kappa, mu)
+                                      cp, g, R_d, p_0, kappa, mu, f, F)
 
     eqn = form_mass(unp1, rhonp1, thetanp1, du, drho, dtheta)
     eqn -= form_mass(un, rhon, thetan, du, drho, dtheta)
