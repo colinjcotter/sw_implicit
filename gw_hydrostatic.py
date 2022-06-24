@@ -73,53 +73,14 @@ Up = fd.as_vector([fd.Constant(0.0),
 un, rhon, thetan = Un.split()
 thetan.interpolate(thetab)
 theta_back = fd.Function(Vt).assign(thetan)
-rhon.assign(1.0e-5)
 
 Pi = fd.Function(V2)
 
-hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary=fd.Constant(0.02),
+hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary=fd.Constant(1.0),
                     cp=cp, R_d=R_d, p_0=p_0, kappa=kappa, g=g, Up=Up,
-                    top=True, Pi=Pi)
-p0 = maximum(Pi)
-
-hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary=fd.Constant(0.05),
-                    cp=cp, R_d=R_d, p_0=p_0, kappa=kappa, g=g, Up=Up,
-                    top=True, Pi=Pi)
-
-p1 = maximum(Pi)
-alpha = 2.*(p1-p0)
-beta = p1-alpha
-pi_top = (1.-beta)/alpha
-
-hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary=fd.Constant(pi_top),
-                    cp=cp, R_d=R_d, p_0=p_0, kappa=kappa, g=g, Up=Up,
-                    top=True)
+                    top=False, Pi=Pi)
 
 rho_back = fd.Function(V2).assign(rhon)
-
-#requires a mesh hierarchy
-mg_sparameters = {
-    "snes_converged_reason": None,
-    "mat_type": "matfree",
-    "ksp_type": "fgmres",
-    "ksp_converged_reason": None,
-    "ksp_atol": 1e-8,
-    "ksp_rtol": 1e-8,
-    "ksp_max_it": 400,
-    "pc_type": "mg",
-    "pc_mg_cycle_type": "v",
-    "pc_mg_type": "multiplicative",
-    "mg_levels_ksp_type": "gmres",
-    "mg_levels_ksp_max_it": 2,
-    "mg_levels_pc_type": "python",
-    "mg_levels_pc_python_type": "firedrake.AssembledPC",
-    "mg_levels_assembled_pc_type": "python",
-    "mg_levels_assembled_pc_python_type": "firedrake.ASMStarPC",
-    "mg_levels_assembled_pc_star_construct_dim": 0,
-    "mg_coarse_pc_type": "python",
-    "mg_coarse_pc_python_type": "firedrake.AssembledPC",
-    "mg_coarse_assembled_pc_type": "lu"
-}
 
 sparameters = {
     "snes_converged_reason": None,
