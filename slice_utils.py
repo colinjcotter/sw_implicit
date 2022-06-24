@@ -11,6 +11,15 @@ static void maxify(double *a, double *b) {
 """, "maxify"), f.dof_dset.set, fmax(op2.MAX), f.dat(op2.READ))
     return fmax.data[0]
 
+def minimum(f):
+    fmin = op2.Global(1, [1000], dtype=float)
+    op2.par_loop(op2.Kernel("""
+static void minify(double *a, double *b) {
+    a[0] = a[0] > fabs(b[0]) ? fabs(b[0]) : a[0];
+}
+""", "minify"), f.dof_dset.set, fmin(op2.MIN), f.dat(op2.READ))
+    return fmin.data[0]
+
 def pi_formula(rho, theta, R_d, p_0, kappa):
     return (rho * R_d * theta / p_0) ** (kappa / (1 - kappa))
 
@@ -22,43 +31,37 @@ def hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary,
                     top = False, Pi = None):
     # Calculate hydrostatic Pi, rho
     W_h = Vv * V2
-
-    n = fd.FacetNormal(mesh)
-    
     wh = fd.Function(W_h)
-    v, rho = wh.split()
-    rho.assign(rhon)
-    v, rho = fd.split(wh)
+    n = fd.FacetNormal(mesh)
     dv, drho = fd.TestFunctions(W_h)
 
-    Pif = pi_formula(rho, thetan, R_d, p_0, kappa)
-
-    rhoeqn = (
-        (cp*fd.inner(v, dv) - cp*fd.div(dv*thetan)*Pif)*fd.dx
+    v, Pi0 = fd.TrialFunctions(W_h)
+    
+    Pieqn = (
+        (cp*fd.inner(v, dv) - cp*fd.div(dv*thetan)*Pi0)*fd.dx
         + drho*fd.div(thetan*v)*fd.dx
     )
-
+    
     if top:
         bmeasure = fd.ds_t
         bstring = "bottom"
     else:
         bmeasure = fd.ds_b
         bstring = "top"
-
+        
     zeros = []
     for i in range(Up.ufl_shape[0]):
         zeros.append(fd.Constant(0.))
-
-    rhoeqn += cp*fd.inner(dv, n)*thetan*pi_boundary*bmeasure
-    rhoeqn += g*fd.inner(dv, Up)*fd.dx
+        
+    L = -cp*fd.inner(dv, n)*thetan*pi_boundary*bmeasure
+    L -= g*fd.inner(dv, Up)*fd.dx
     bcs = [fd.DirichletBC(W_h.sub(0), zeros, bstring)]
-
-    rhoeqn_mod = rhoeqn + drho*rho*fd.dx
-    Jp = fd.derivative(rhoeqn_mod, wh)
-
-    RhoProblem = fd.NonlinearVariationalProblem(rhoeqn, wh, bcs=bcs)
-
+    
+    PiProblem = fd.LinearVariationalProblem(Pieqn, L, wh, bcs=bcs)
+        
     lu_params = {
+        'snes_monitor': None,
+        'ksp_monitor': None,
         'snes_converged_reason': None,
         'mat_type': 'aij',
         'pc_type': 'lu',
@@ -66,17 +69,51 @@ def hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary,
         "pc_factor_mat_solver_type": "mumps"
     }
 
-    RhoSolver = fd.NonlinearVariationalSolver(RhoProblem,
-                                              solver_parameters=lu_params,
-                                              options_prefix="rhosolver")
-
-    RhoSolver.solve()
-    v, Rho0 = wh.split()
-
-    rhon.assign(Rho0)
-
+    PiSolver = fd.LinearVariationalSolver(PiProblem,
+                                          solver_parameters=lu_params,
+                                          options_prefix="Pisolver")
+    PiSolver.solve()
+    v, Pi0 = wh.split()
     if Pi:
-        Pi.project(pi_formula(rhon, thetan, R_d, p_0, kappa))
+        Pi.assign(Pi0)
+
+    if rhon:
+        rhon.project(rho_formula(Pi0, thetan, R_d, p_0, kappa))
+        v,  rho = wh.split()
+        rho.assign(rhon)
+        v, rho = fd.split(wh)
+
+        Pif = pi_formula(rho, thetan, R_d, p_0, kappa)
+
+        rhoeqn = (
+            (cp*fd.inner(v, dv) - cp*fd.div(dv*thetan)*Pif)*fd.dx
+            + cp*drho*fd.div(thetan*v)*fd.dx
+        )
+        
+        if top:
+            bmeasure = fd.ds_t
+            bstring = "bottom"
+        else:
+            bmeasure = fd.ds_b
+            bstring = "top"
+
+        zeros = []
+        for i in range(Up.ufl_shape[0]):
+            zeros.append(fd.Constant(0.))
+
+        rhoeqn += cp*fd.inner(dv, n)*thetan*pi_boundary*bmeasure
+        rhoeqn += g*fd.inner(dv, Up)*fd.dx
+        bcs = [fd.DirichletBC(W_h.sub(0), zeros, bstring)]
+
+        RhoProblem = fd.NonlinearVariationalProblem(rhoeqn, wh, bcs=bcs)
+
+        RhoSolver = fd.NonlinearVariationalSolver(RhoProblem,
+                                                  solver_parameters=lu_params,
+                                                  options_prefix="rhosolver")
+
+        RhoSolver.solve()
+        v, Rho0 = wh.split()
+        rhon.assign(Rho0)
 
 def theta_tendency(q, u, theta, n, Up, c_pen):
     unn = 0.5*(fd.inner(u, n) + abs(fd.inner(u, n)))

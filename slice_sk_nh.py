@@ -139,7 +139,7 @@ bcs = [fd.DirichletBC(W.sub(0), 0., "bottom"),
 nprob = fd.NonlinearVariationalProblem(eqn, Unp1, bcs=bcs)
 
 nsolver = fd.NonlinearVariationalSolver(nprob, solver_parameters=
-                                        lines_sparameters,
+                                        lines_parameters,
                                         options_prefix="nsolver")
     
 name = "gw_imp"

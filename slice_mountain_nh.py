@@ -1,7 +1,7 @@
 import firedrake as fd
 from petsc4py import PETSc
 from slice_utils import hydrostatic_rho, pi_formula,\
-    slice_imr_form, both, maximum
+    slice_imr_form, both, maximum, minimum
 import numpy as np
 
 dT = fd.Constant(1)
@@ -87,18 +87,33 @@ rhon.assign(1.0e-5)
 
 Pi = fd.Function(V2)
 
-hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary=fd.Constant(0.02),
+hydrostatic_rho(Vv, V2, mesh, thetan, rhon=None, pi_boundary=fd.Constant(1),
                     cp=cp, R_d=R_d, p_0=p_0, kappa=kappa, g=g, Up=Up,
-                    top=True, Pi=Pi)
+                    top=False, Pi=Pi)
+bdyval = minimum(Pi)
+
+hydrostatic_rho(Vv, V2, mesh, thetan, rhon=None,
+                pi_boundary=fd.Constant(bdyval),
+                cp=cp, R_d=R_d, p_0=p_0, kappa=kappa, g=g, Up=Up,
+                top=True, Pi=Pi)
+
 p0 = maximum(Pi)
 
-hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary=fd.Constant(0.05),
-                    cp=cp, R_d=R_d, p_0=p_0, kappa=kappa, g=g, Up=Up,
-                    top=True, Pi=Pi)
+hydrostatic_rho(Vv, V2, mesh, thetan, rhon=None,
+                pi_boundary=fd.Constant(bdyval*0.9),
+                cp=cp, R_d=R_d, p_0=p_0, kappa=kappa, g=g, Up=Up,
+                top=True, Pi=Pi)
 
 p1 = maximum(Pi)
-alpha = 2.*(p1-p0)
-beta = p1-alpha
+
+# pbot = beta + alpha*ptop
+# p0 = beta + alpha*bdyval
+# p1 = beta + alpha*0.9*bdyval
+# p0 - p1 = alpha*bdyval*(1.0-0.9) = alpha*bdyval*0.1
+# alpha = (p1-p0)/0.1/bdyval
+alpha = (p1-p0)/bdyval/0.1
+beta = p0-alpha*bdyval
+# 1 = beta + alpha*ptop
 pi_top = (1.-beta)/alpha
 
 hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary=fd.Constant(pi_top),
