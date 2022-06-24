@@ -157,9 +157,9 @@ file_gw.write(un, rhon, thetan, delta_rho, delta_theta, Courant)
 Unp1.assign(Un)
 
 t = 0.
-dumpt = 500.
 tdump = 0.
 tmax = 60000.
+dumpt = tmax/60
 
 PETSc.Sys.Print('tmax', tmax, 'dt', dt)
 while t < tmax - 0.5*dt:
