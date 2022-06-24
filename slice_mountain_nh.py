@@ -147,7 +147,7 @@ sparameters = {
     "assembled_pc_vanka_sub_sub_pc_factor_mat_ordering_type": "rcm"
 }
 
-un.project(fd.as_vector([20.0, 0.0]))
+un.project(fd.as_vector([10.0, 0.0]))
 
 #The timestepping solver
 un, rhon, thetan = fd.split(Un)
