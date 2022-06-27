@@ -79,7 +79,8 @@ x, y, z = fd.SpatialCoordinate(mesh)
 
 # N^2 = (g/theta)dtheta/dz => dtheta/dz = theta N^2g => theta=theta_0exp(N^2gz)
 Tsurf = fd.Constant(250.)
-thetab = Tsurf
+N = g/fd.sqrt(c_p*Tsurf)
+thetab = Tsurf*fd.exp(N**2*z/g)
 
 cp = fd.Constant(1004.5)  # SHC of dry air at const. pressure (J/kg/K)
 Up = fd.as_vector([fd.Constant(0.0),
