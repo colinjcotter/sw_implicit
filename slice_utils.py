@@ -283,21 +283,21 @@ def get_form_function(n, Up, c_pen,
         return eqn
     return form_function
 
-def viscosity(u, v, kappa, mu = Constant(10.0)):
+def form_viscosity(u, v, kappa, mu = fd.Constant(10.0)):
     mesh = v.ufl_domain()
-    n = FacetNormal(state.mesh)
-    a = inner(grad(gamma), grad(phi)*kappa)*dx
-    h = avg(CellVolume(mesh))/FacetArea(mesh)
-    def get_flux_form(dS, M):
-        fluxes = (-inner(2*avg(outer(v, n)), avg(grad(gamma)))
-                  - inner(avg(grad(v)), 2*avg(outer(gamma, n)))
-                  + mu*h*inner(2*avg(outer(v, n)),
-                               2*avg(outer(gamma, n)*kappa)))*dS
-            return fluxes
+    n = fd.FacetNormal(mesh)
+    a = fd.inner(fd.grad(u), fd.grad(v))*fd.dx
+    h = fd.avg(fd.CellVolume(mesh))/fd.FacetArea(mesh)
+    def get_flux_form(dS):
+        fluxes = (-fd.inner(2*fd.avg(fd.outer(v, n)), fd.avg(fd.grad(u)))
+                  - fd.inner(fd.avg(fd.grad(v)), 2*fd.avg(fd.outer(u, n)))
+                  + mu*h*fd.inner(2*fd.avg(fd.outer(v, n)),
+                               2*fd.avg(fd.outer(u, n))))*dS
+        return fluxes
 
-        a += kappa*get_flux_form(dS_v)
-        a += kappa*get_flux_form(dS_h)
-        return a
+    a += kappa*get_flux_form(fd.dS_v)
+    a += kappa*get_flux_form(fd.dS_h)
+    return a
 
 def slice_imr_form(un, unp1, rhon, rhonp1, thetan, thetanp1,
                    du, drho, dtheta,
