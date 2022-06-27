@@ -283,10 +283,27 @@ def get_form_function(n, Up, c_pen,
         return eqn
     return form_function
 
+def viscosity(u, v, kappa, mu = Constant(10.0)):
+    mesh = v.ufl_domain()
+    n = FacetNormal(state.mesh)
+    a = inner(grad(gamma), grad(phi)*kappa)*dx
+    h = avg(CellVolume(mesh))/FacetArea(mesh)
+    def get_flux_form(dS, M):
+        fluxes = (-inner(2*avg(outer(v, n)), avg(grad(gamma)))
+                  - inner(avg(grad(v)), 2*avg(outer(gamma, n)))
+                  + mu*h*inner(2*avg(outer(v, n)),
+                               2*avg(outer(gamma, n)*kappa)))*dS
+            return fluxes
+
+        a += kappa*get_flux_form(dS_v)
+        a += kappa*get_flux_form(dS_h)
+        return a
+
 def slice_imr_form(un, unp1, rhon, rhonp1, thetan, thetanp1,
                    du, drho, dtheta,
                    dT, n, Up, c_pen,
-                   cp, g, R_d, p_0, kappa, mu=None, f=None, F=None):
+                   cp, g, R_d, p_0, kappa, mu=None, f=None, F=None,
+                   viscosity=None, diffusivity=None):
     form_mass = get_form_mass()
     form_function = get_form_function(n, Up, c_pen,
                                       cp, g, R_d, p_0, kappa, mu, f, F)
@@ -298,4 +315,10 @@ def slice_imr_form(un, unp1, rhon, rhonp1, thetan, thetanp1,
     thetanph = fd.Constant(0.5)*(thetan + thetanp1)
     eqn += dT*form_function(unph, rhonph, thetanph,
                             du, drho, dtheta)
+
+    if viscosity:
+        eqn += dT*form_viscosity(unph, du, viscosity)
+    if diffusivity:
+        eqn += dT*form_viscosity(thetanph, dtheta, diffusivity)
+
     return eqn
