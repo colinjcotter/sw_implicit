@@ -30,7 +30,6 @@ H = 50e3  # Height position of the model top
 mesh = fd.ExtrudedMesh(m, layers=nlayers, layer_height=H/nlayers)
 n = fd.FacetNormal(mesh)
 
-name = "hydrostatic_agnesi"
 # making a mountain out of a molehill
 a = 10000.
 xc = L/2.

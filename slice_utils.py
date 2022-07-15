@@ -3,19 +3,19 @@ import numpy as np
 from firedrake import op2
 
 def maximum(f):
-    fmax = op2.Global(1, [-1000], dtype=float)
+    fmax = op2.Global(1, [-1e50], dtype=float)
     op2.par_loop(op2.Kernel("""
 static void maxify(double *a, double *b) {
-    a[0] = a[0] < fabs(b[0]) ? fabs(b[0]) : a[0];
+    a[0] = a[0] < b[0] ? b[0] : a[0];
 }
 """, "maxify"), f.dof_dset.set, fmax(op2.MAX), f.dat(op2.READ))
     return fmax.data[0]
 
 def minimum(f):
-    fmin = op2.Global(1, [1000], dtype=float)
+    fmin = op2.Global(1, [1e50], dtype=float)
     op2.par_loop(op2.Kernel("""
 static void minify(double *a, double *b) {
-    a[0] = a[0] > fabs(b[0]) ? fabs(b[0]) : a[0];
+    a[0] = a[0] > b[0] ? b[0] : a[0];
 }
 """, "minify"), f.dof_dset.set, fmin(op2.MIN), f.dat(op2.READ))
     return fmin.data[0]
@@ -125,14 +125,14 @@ def theta_tendency(q, u, theta, n, Up, c_pen):
                       - unn('-')*theta('-'))*fd.dS_v
         - fd.jump(q*u*theta, n)*fd.dS_v
         )
-    #jump stabilisation in the vertical
+    #jump stabilisation
     mesh = u.ufl_domain()
     h = fd.avg(fd.CellVolume(mesh))/fd.FacetArea(mesh)
 
     eqn += (
         h**2*c_pen*abs(fd.inner(u('+'),n('+')))
-        *fd.jump(fd.inner(fd.grad(theta), Up))
-        *fd.jump(fd.inner(fd.grad(q), Up))*fd.dS_h)
+        *fd.inner(fd.jump(fd.grad(theta)),
+                  fd.jump(fd.grad(q)))*(fd.dS_v + fd.dS_h))
     return eqn
 
 def theta_mass(q, theta):

@@ -3,11 +3,30 @@ from petsc4py import PETSc
 from slice_utils import hydrostatic_rho, pi_formula,\
     slice_imr_form, both, maximum, minimum
 import numpy as np
+from pyop2.profiling import timed_stage
+
+import argparse
+parser = argparse.ArgumentParser(description='Straka testcase.')
+parser.add_argument('--nlayers', type=int, default=10, help='Number of layers, default 10.')
+parser.add_argument('--ncolumns', type=int, default=10, help='Number of columns, default 10.')
+parser.add_argument('--tmax', type=float, default=15, help='Final time in minutes. Default 15.')
+parser.add_argument('--dumpt', type=float, default=1, help='Dump time in minutes. Default 1.')
+parser.add_argument('--dt', type=float, default=1, help='Timestep in seconds. Default 1.')
+parser.add_argument('--filename', type=str, default='straka')
+parser.add_argument('--degree', type=int, default=1, help='Degree of finite element space (the DG space). Default 1.')
+parser.add_argument('--show_args', action='store_true', help='Output all the arguments.')
+
+args = parser.parse_known_args()
+args = args[0]
+
+if args.show_args:
+    PETSc.Sys.Print(args)
 
 dT = fd.Constant(1)
 
-nlayers = 50  # horizontal layers
-base_columns = 150  # number of columns
+nlayers = args.nlayers
+base_columns = args.ncolumns
+dt = args.dt # timestep
 L = 51200.
 distribution_parameters = {"partition": True, "overlap_type": (fd.DistributedMeshOverlapType.VERTEX, 2)}
 m = fd.PeriodicIntervalMesh(base_columns, L, distribution_parameters =
@@ -27,10 +46,9 @@ H = 6400.  # Height position of the model top
 mesh = fd.ExtrudedMesh(m, layers=nlayers, layer_height=H/nlayers)
 n = fd.FacetNormal(mesh)
 
-name = "straka"
-    
-horizontal_degree = 1
-vertical_degree = 1
+name = args.filename    
+horizontal_degree = args.degree
+vertical_degree = args.degree
 
 S1 = fd.FiniteElement("CG", fd.interval, horizontal_degree+1)
 S2 = fd.FiniteElement("DG", fd.interval, horizontal_degree)
@@ -92,13 +110,17 @@ sparameters = {
     "ksp_converged_reason": None,
     "ksp_atol": 1e-8,
     "ksp_rtol": 1e-8,
+    #"ksp_view": None,
     "ksp_max_it": 400,
     "pc_type": "python",
     "pc_python_type": "firedrake.AssembledPC",
     "assembled_pc_type": "python",
-    "assembled_pc_python_type": "firedrake.ASMVankaPC",
-    "assembled_pc_vanka_construct_dim": 0,
-    "assembled_pc_vanka_sub_sub_pc_factor_mat_ordering_type": "rcm"
+    "assembled_pc_python_type": "firedrake.ASMStarPC",
+    "assembled_pc_star_construct_dim": 0,
+    "assembled_pc_star_sub_sub_pc_factor_mat_ordering_type": "rcm",
+    "assembled_pc_star_sub_sub_pc_factor_reuse_ordering": None,
+    "assembled_pc_star_sub_sub_pc_factor_reuse_fill": None,
+    "assembled_pc_star_sub_sub_pc_factor_fill": 1.2,
 }
 
 #The timestepping solver
@@ -109,7 +131,7 @@ du, drho, dtheta = fd.TestFunctions(W)
 
 eqn = slice_imr_form(un, unp1, rhon, rhonp1, thetan, thetanp1,
                      du, drho, dtheta,
-                     dT=dT, n=n, Up=Up, c_pen=fd.Constant(2.0**(-7./2)),
+                     dT=dT, n=n, Up=Up, c_pen=fd.Constant(2.0*2.0**(-7./2)),
                      cp=cp, g=g, R_d=R_d, p_0=p_0,
                      kappa=kappa, mu=None,
                      viscosity=fd.Constant(75.),
@@ -128,7 +150,6 @@ un, rhon, thetan = Un.split()
 delta_theta = fd.Function(Vt, name="delta theta").assign(thetan-theta_back)
 delta_rho = fd.Function(V2, name="delta rho").assign(rhon-rho_back)
 
-dt = 1
 dT.assign(dt)
 
 DG0 = fd.FunctionSpace(mesh, "DG", 0)
@@ -147,13 +168,26 @@ Courant = fd.Function(DG0, name="Courant")
 fd.assemble(Courant_num_form, tensor=Courant_num)
 Courant.assign(Courant_num/Courant_denom)
 
-file_gw.write(un, rhon, thetan, delta_rho, delta_theta, Courant)
+DG = fd.FunctionSpace(mesh, "DG", 0)
+frontdetector = fd.Function(DG)
+
+front_expr = fd.conditional(thetan < fd.Constant(Tsurf*0.999), x[0], 0)
+
+frontdetector.interpolate(front_expr)
+
+file_gw.write(un, rhon, thetan, delta_rho, delta_theta, Courant, frontdetector)
 Unp1.assign(Un)
 
 t = 0.
-tmax = 15*60.
-dumpt = 120.
+tmax = args.tmax*60.
+dumpt = args.dumpt*60.
 tdump = 0.
+
+
+delta_theta.assign(thetan-theta_back)
+PETSc.Sys.Print("maxes and mins of Delta theta",
+                maximum(delta_theta),
+                minimum(delta_theta))
 
 PETSc.Sys.Print('tmax', tmax, 'dt', dt)
 while t < tmax - 0.5*dt:
@@ -161,9 +195,16 @@ while t < tmax - 0.5*dt:
     t += dt
     tdump += dt
 
-    nsolver.solve()
+    with timed_stage("Time Solver"):
+        nsolver.solve()
     Un.assign(Unp1)
-
+    frontdetector.interpolate(front_expr)
+    delta_theta.assign(thetan-theta_back)
+    PETSc.Sys.Print("Front detector", maximum(frontdetector))
+    PETSc.Sys.Print("maxes and mins of Delta theta",
+                    maximum(delta_theta),
+                    minimum(delta_theta))
+    
     if tdump > dumpt - dt*0.5:
         delta_theta.assign(thetan-theta_back)
         delta_rho.assign(rhon-rho_back)
@@ -171,5 +212,5 @@ while t < tmax - 0.5*dt:
         fd.assemble(Courant_num_form, tensor=Courant_num)
         Courant.assign(Courant_num/Courant_denom)
         file_gw.write(un, rhon, thetan, delta_rho, delta_theta,
-                      Courant)
+                      Courant, frontdetector)
         tdump -= dumpt
