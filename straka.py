@@ -98,10 +98,17 @@ xr = 4000.
 zc = 3000.
 zr = 2000.
 r = fd.sqrt(((x[0]-xc)/xr)**2 + ((x[1]-zc)/zr)**2)
-theta_pert =fd.conditional(r > 1., 0., -7.5*(1.+fd.cos(fd.pi*r)))
-thetan.interpolate(theta_back + theta_pert)
+T_pert =fd.conditional(r > 1., 0., -7.5*(1.+fd.cos(fd.pi*r)))
+# T = theta*Pi so Delta theta = Delta T/Pi assuming Pi fixed
 
+Pi_back = pi_formula(rhon, thetan, R_d, p_0, kappa)
+# this keeps perturbation at zero away from bubble
+thetan.project(theta_back + T_pert/Pi_back)
+# save the background stratification for rho
 rho_back = fd.Function(V2).assign(rhon)
+# Compute the new rho
+# using rho*theta = Pi which should be held fixed
+rhon.project(rhon*thetan/theta_back)
 
 sparameters = {
     "snes_converged_reason": None,
@@ -131,7 +138,7 @@ du, drho, dtheta = fd.TestFunctions(W)
 
 eqn = slice_imr_form(un, unp1, rhon, rhonp1, thetan, thetanp1,
                      du, drho, dtheta,
-                     dT=dT, n=n, Up=Up, c_pen=fd.Constant(2.0*2.0**(-7./2)),
+                     dT=dT, n=n, Up=Up, c_pen=fd.Constant(2.0**(-7./2)),
                      cp=cp, g=g, R_d=R_d, p_0=p_0,
                      kappa=kappa, mu=None,
                      viscosity=fd.Constant(75.),
@@ -175,7 +182,8 @@ front_expr = fd.conditional(thetan < fd.Constant(Tsurf*0.999), x[0], 0)
 
 frontdetector.interpolate(front_expr)
 
-file_gw.write(un, rhon, thetan, delta_rho, delta_theta, Courant, frontdetector)
+Time = Function(V2, name="Time")
+file_gw.write(un, rhon, thetan, delta_rho, delta_theta, Courant, frontdetector, Time)
 Unp1.assign(Un)
 
 t = 0.
@@ -190,6 +198,8 @@ PETSc.Sys.Print("maxes and mins of Delta theta",
                 minimum(delta_theta))
 
 PETSc.Sys.Print('tmax', tmax, 'dt', dt)
+
+
 while t < tmax - 0.5*dt:
     PETSc.Sys.Print(t)
     t += dt
@@ -212,5 +222,5 @@ while t < tmax - 0.5*dt:
         fd.assemble(Courant_num_form, tensor=Courant_num)
         Courant.assign(Courant_num/Courant_denom)
         file_gw.write(un, rhon, thetan, delta_rho, delta_theta,
-                      Courant, frontdetector)
+                      Courant, frontdetector, Time)
         tdump -= dumpt
