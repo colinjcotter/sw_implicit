@@ -182,7 +182,7 @@ front_expr = fd.conditional(thetan < fd.Constant(Tsurf*0.999), x[0], 0)
 
 frontdetector.interpolate(front_expr)
 
-Time = Function(V2, name="Time")
+Time = fd.Function(V2, name="Time")
 file_gw.write(un, rhon, thetan, delta_rho, delta_theta, Courant, frontdetector, Time)
 Unp1.assign(Un)
 
