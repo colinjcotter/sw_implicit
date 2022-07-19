@@ -31,6 +31,8 @@ L = 51200.
 distribution_parameters = {"partition": True, "overlap_type": (fd.DistributedMeshOverlapType.VERTEX, 2)}
 m = fd.PeriodicIntervalMesh(base_columns, L, distribution_parameters =
                             distribution_parameters)
+#translate the mesh to the left by 51200/25600
+m.coordinates.dat.data[:] -= 25600
 
 g = fd.Constant(9.810616)
 N = fd.Constant(0.01)  # Brunt-Vaisala frequency (1/s)
@@ -93,7 +95,7 @@ hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary=fd.Constant(1.0),
                     top=False)
 
 x = fd.SpatialCoordinate(mesh)
-xc = 0.5*L
+xc = 0.
 xr = 4000.
 zc = 3000.
 zr = 2000.
