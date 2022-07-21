@@ -95,11 +95,9 @@ rho_back = fd.Function(V2).assign(rhon)
 
 lines_parameters = {
     "snes_converged_reason": None,
-    "ksp_monitor": None,
     "mat_type": "matfree",
     "ksp_type": "gmres",
     "ksp_converged_reason": None,
-    "ksp_monitor": None,
     "ksp_atol": 1e-8,
     "ksp_rtol": 1e-8,
     "ksp_max_it": 400,
