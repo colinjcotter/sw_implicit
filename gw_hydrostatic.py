@@ -6,8 +6,8 @@ import numpy as np
 
 dT = fd.Constant(1)
 
-nlayers = 50  # horizontal layers
-base_columns = 150  # number of columns
+nlayers = 10  # horizontal layers
+base_columns = 300  # number of columns
 L = 6000e3
 distribution_parameters = {"partition": True, "overlap_type": (fd.DistributedMeshOverlapType.VERTEX, 2)}
 
@@ -15,6 +15,7 @@ m = fd.PeriodicRectangleMesh(base_columns, ny=1, Lx=L, Ly=1.0e-3*L,
                              direction="both",
                              quadrilateral=True,
                              distribution_parameters=distribution_parameters)
+m.coordinates.dat.data[:] -= Lx/2
 
 g = fd.Constant(9.810616)
 N = fd.Constant(0.01)  # Brunt-Vaisala frequency (1/s)
@@ -100,7 +101,7 @@ sparameters = {
 
 a = fd.Constant(100.0e3)
 deltaTheta = fd.Constant(1.0e-2)
-theta_pert = deltaTheta*fd.sin(np.pi*z/H)/(1 + (x - L/2)**2/a**2)
+theta_pert = deltaTheta*fd.sin(np.pi*z/H)/(1 + x**2/a**2)
 thetan.interpolate(thetan + theta_pert)
 un.project(fd.as_vector([fd.Constant(20.0),
                          fd.Constant(0.0),
@@ -134,7 +135,7 @@ un, rhon, thetan = Un.split()
 delta_theta = fd.Function(Vt, name="delta theta").assign(thetan-theta_back)
 delta_rho = fd.Function(V2, name="delta rho").assign(rhon-rho_back)
 
-dt = 50
+dt = 100
 dT.assign(dt)
 
 DG0 = fd.FunctionSpace(mesh, "DG", 0)
