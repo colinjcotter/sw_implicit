@@ -15,7 +15,7 @@ m = fd.PeriodicRectangleMesh(base_columns, ny=1, Lx=L, Ly=1.0e-3*L,
                              direction="both",
                              quadrilateral=True,
                              distribution_parameters=distribution_parameters)
-m.coordinates.dat.data[:] -= Lx/2
+m.coordinates.dat.data[:] -= L/2
 
 g = fd.Constant(9.810616)
 N = fd.Constant(0.01)  # Brunt-Vaisala frequency (1/s)
