@@ -6,12 +6,13 @@ import numpy as np
 
 dT = fd.Constant(1)
 
-nlayers = 50  # horizontal layers
-base_columns = 150  # number of columns
-L = 100e3
+nlayers = 70  # horizontal layers
+base_columns = 180  # number of columns
+L = 144e3
 distribution_parameters = {"partition": True, "overlap_type": (fd.DistributedMeshOverlapType.VERTEX, 2)}
 m = fd.PeriodicIntervalMesh(base_columns, L, distribution_parameters =
                             distribution_parameters)
+m.coordinates.dat.data[:] -= L/2
 
 g = fd.Constant(9.810616)
 N = fd.Constant(0.01)  # Brunt-Vaisala frequency (1/s)
@@ -23,13 +24,13 @@ cv = fd.Constant(717.)  # SHC of dry air at const. volume (J/kg/K)
 T_0 = fd.Constant(273.15)  # ref. temperature
 
 # build volume mesh
-H = 30e3  # Height position of the model top
+H = 35e3  # Height position of the model top
 mesh = fd.ExtrudedMesh(m, layers=nlayers, layer_height=H/nlayers)
 n = fd.FacetNormal(mesh)
 
 # making a mountain out of a molehill
 a = 1000.
-xc = L/2.
+xc = 0.
 x, z = fd.SpatialCoordinate(mesh)
 hm = 1.
 zs = hm*a**2/((x-xc)**2 + a**2)
@@ -168,10 +169,13 @@ un.project(fd.as_vector([10.0, 0.0]))
 un, rhon, thetan = fd.split(Un)
 unp1, rhonp1, thetanp1 = fd.split(Unp1)
 
+dt = 5
+dT.assign(dt)
+
 du, drho, dtheta = fd.TestFunctions(W)
 
 zc = H-10000.
-mubar = 0.3
+mubar = 0.15
 mu_top = fd.conditional(z <= zc, 0.0, mubar*fd.sin((np.pi/2.)*(z-zc)/(H-zc))**2)
 mu = fd.Function(V2).interpolate(mu_top/dT)
 
@@ -192,9 +196,6 @@ file_gw = fd.File(name+'.pvd')
 un, rhon, thetan = Un.split()
 delta_theta = fd.Function(Vt, name="delta theta").assign(thetan-theta_back)
 delta_rho = fd.Function(V2, name="delta rho").assign(rhon-rho_back)
-
-dt = 5
-dT.assign(dt)
 
 DG0 = fd.FunctionSpace(mesh, "DG", 0)
 One = fd.Function(DG0).assign(1.0)
