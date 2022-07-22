@@ -1,6 +1,7 @@
 import firedrake as fd
 import numpy as np
 from firedrake import op2
+from petsc4py import PETSc
 
 def maximum(f):
     fmax = op2.Global(1, [-1e50], dtype=float)
@@ -66,7 +67,6 @@ def hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary,
         'mat_type': 'aij',
         'pc_type': 'lu',
         "pc_factor_mat_ordering_type": "rcm",
-        "pc_factor_mat_solver_type": "mumps"
     }
 
     PiSolver = fd.LinearVariationalSolver(PiProblem,
@@ -76,9 +76,10 @@ def hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary,
     v, Pi0 = wh.split()
     if Pi:
         Pi.assign(Pi0)
-
+    PETSc.Sys.Print("pi",maximum(Pi0))
     if rhon:
-        rhon.project(rho_formula(Pi0, thetan, R_d, p_0, kappa))
+        rhon.interpolate(rho_formula(Pi0, thetan, R_d, p_0, kappa))
+        PETSc.Sys.Print(maximum(rhon), minimum(rhon))
         v,  rho = wh.split()
         rho.assign(rhon)
         v, rho = fd.split(wh)

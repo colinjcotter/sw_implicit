@@ -24,7 +24,7 @@ cv = fd.Constant(717.)  # SHC of dry air at const. volume (J/kg/K)
 T_0 = fd.Constant(273.15)  # ref. temperature
 
 # build volume mesh
-H = 35e3  # Height position of the model top
+H = 33e3  # Height position of the model top
 mesh = fd.ExtrudedMesh(m, layers=nlayers, layer_height=H/nlayers)
 n = fd.FacetNormal(mesh)
 
@@ -84,40 +84,43 @@ Up = fd.as_vector([fd.Constant(0.0), fd.Constant(1.0)]) # up direction
 un, rhon, thetan = Un.split()
 thetan.interpolate(thetab)
 theta_back = fd.Function(Vt).assign(thetan)
-rhon.assign(1.0e-5)
 
 Pi = fd.Function(V2)
 
-hydrostatic_rho(Vv, V2, mesh, thetan, rhon=None, pi_boundary=fd.Constant(1),
+PETSc.Sys.Print("Solve with Pi_b = 1")
+bdyC = fd.Constant(1)
+hydrostatic_rho(Vv, V2, mesh, thetan, rhon=None, pi_boundary=bdyC,
                     cp=cp, R_d=R_d, p_0=p_0, kappa=kappa, g=g, Up=Up,
                     top=False, Pi=Pi)
 bdyval = minimum(Pi)
 
-hydrostatic_rho(Vv, V2, mesh, thetan, rhon=None,
-                pi_boundary=fd.Constant(bdyval),
+PETSc.Sys.Print("Solve with Pi_t =", bdyval)
+bdyC.assign(bdyval)
+hydrostatic_rho(Vv, V2, mesh, thetan, rhon=None, pi_boundary=bdyC,
                 cp=cp, R_d=R_d, p_0=p_0, kappa=kappa, g=g, Up=Up,
                 top=True, Pi=Pi)
+maxP = maximum(Pi)
 
-p0 = maximum(Pi)
+bdyval0 = bdyval*0.9
+bdyval1 = bdyval*2
+Ptarg = 1.00001
+while np.abs(maxP-Ptarg) > 1.0e-7:
+    bdyval = 0.5*(bdyval0 + bdyval1)
+    bdyC.assign(bdyval)
+    PETSc.Sys.Print("Solve with Pi_t = ", bdyval)
+    hydrostatic_rho(Vv, V2, mesh, thetan, rhon=None,
+                    pi_boundary=bdyC,
+                    cp=cp, R_d=R_d, p_0=p_0, kappa=kappa, g=g, Up=Up,
+                    top=True, Pi=Pi)
+    maxP = maximum(Pi)
+    PETSc.Sys.Print(bdyval, bdyval0, bdyval1)
+    if maxP < Ptarg:
+        bdyval0 = bdyval*1.0
+    else:
+        bdyval1 = bdyval*1.0
+    PETSc.Sys.Print(bdyval, bdyval0, bdyval1)
 
-hydrostatic_rho(Vv, V2, mesh, thetan, rhon=None,
-                pi_boundary=fd.Constant(bdyval*0.9),
-                cp=cp, R_d=R_d, p_0=p_0, kappa=kappa, g=g, Up=Up,
-                top=True, Pi=Pi)
-
-p1 = maximum(Pi)
-
-# pbot = beta + alpha*ptop
-# p0 = beta + alpha*bdyval
-# p1 = beta + alpha*0.9*bdyval
-# p0 - p1 = alpha*bdyval*(1.0-0.9) = alpha*bdyval*0.1
-# alpha = (p1-p0)/0.1/bdyval
-alpha = (p1-p0)/bdyval/0.1
-beta = p0-alpha*bdyval
-# 1 = beta + alpha*ptop
-pi_top = (1.-beta)/alpha
-
-hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary=fd.Constant(pi_top),
+hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary=bdyC,
                     cp=cp, R_d=R_d, p_0=p_0, kappa=kappa, g=g, Up=Up,
                     top=True)
 
