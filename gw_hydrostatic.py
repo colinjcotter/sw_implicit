@@ -83,7 +83,7 @@ hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary=fd.Constant(1.0),
 
 rho_back = fd.Function(V2).assign(rhon)
 
-sparameters = {
+lines_parameters = {
     "snes_converged_reason": None,
     "mat_type": "matfree",
     "ksp_type": "gmres",
@@ -94,9 +94,12 @@ sparameters = {
     "pc_type": "python",
     "pc_python_type": "firedrake.AssembledPC",
     "assembled_pc_type": "python",
-    "assembled_pc_python_type": "firedrake.ASMVankaPC",
-    "assembled_pc_vanka_construct_dim": 0,
-    "assembled_pc_vanka_sub_sub_pc_factor_mat_ordering_type": "rcm"
+    "assembled_pc_python_type": "firedrake.ASMStarPC",
+    "assembled_pc_star_construct_dim": 0,
+    "assembled_pc_star_sub_sub_pc_factor_mat_ordering_type": "rcm",
+    "assembled_pc_star_sub_sub_pc_factor_reuse_ordering": None,
+    "assembled_pc_star_sub_sub_pc_factor_reuse_fill": None,
+    "assembled_pc_star_sub_sub_pc_factor_fill": 1.2,
 }
 
 a = fd.Constant(100.0e3)
@@ -127,7 +130,8 @@ bcs = [fd.DirichletBC(W.sub(0), 0., "bottom"),
 
 nprob = fd.NonlinearVariationalProblem(eqn, Unp1, bcs=bcs)
 
-nsolver = fd.NonlinearVariationalSolver(nprob, solver_parameters=sparameters,
+nsolver = fd.NonlinearVariationalSolver(nprob, solver_parameters=
+                                        lines_parameters,
                                         options_prefix="nsolver")
     
 file_gw = fd.File(name+'.pvd')
