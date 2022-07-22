@@ -24,7 +24,7 @@ cv = fd.Constant(717.)  # SHC of dry air at const. volume (J/kg/K)
 T_0 = fd.Constant(273.15)  # ref. temperature
 
 # build volume mesh
-H = 33e3  # Height position of the model top
+H = 35e3  # Height position of the model top
 mesh = fd.ExtrudedMesh(m, layers=nlayers, layer_height=H/nlayers)
 n = fd.FacetNormal(mesh)
 
@@ -75,7 +75,7 @@ Unp1 = fd.Function(W)
 x, z = fd.SpatialCoordinate(mesh)
 
 # N^2 = (g/theta)dtheta/dz => dtheta/dz = theta N^2g => theta=theta_0exp(N^2gz)
-Tsurf = fd.Constant(288.)
+Tsurf = fd.Constant(300.)
 thetab = Tsurf*fd.exp(N**2*z/g)
 
 cp = fd.Constant(1004.5)  # SHC of dry air at const. pressure (J/kg/K)
@@ -103,7 +103,7 @@ maxP = maximum(Pi)
 
 bdyval0 = bdyval*0.9
 bdyval1 = bdyval*2
-Ptarg = 1.00001
+Ptarg = 1.
 while np.abs(maxP-Ptarg) > 1.0e-7:
     bdyval = 0.5*(bdyval0 + bdyval1)
     bdyC.assign(bdyval)
@@ -161,9 +161,9 @@ sparameters = {
     "pc_type": "python",
     "pc_python_type": "firedrake.AssembledPC",
     "assembled_pc_type": "python",
-    "assembled_pc_python_type": "firedrake.ASMVankaPC",
-    "assembled_pc_vanka_construct_dim": 0,
-    "assembled_pc_vanka_sub_sub_pc_factor_mat_ordering_type": "rcm"
+    "assembled_pc_python_type": "firedrake.ASMStarPC",
+    "assembled_pc_star_construct_dim": 0,
+    "assembled_pc_star_sub_sub_pc_factor_mat_ordering_type": "rcm"
 }
 
 un.project(fd.as_vector([10.0, 0.0]))

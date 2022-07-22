@@ -22,6 +22,7 @@ static void minify(double *a, double *b) {
     return fmin.data[0]
 
 def pi_formula(rho, theta, R_d, p_0, kappa):
+    
     return (rho * R_d * theta / p_0) ** (kappa / (1 - kappa))
 
 def rho_formula(pi, theta, R_d, p_0, kappa):
@@ -62,6 +63,7 @@ def hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary,
         
     lu_params = {
         'snes_monitor': None,
+        'snes_stol': 1.0e-50,
         'ksp_monitor': None,
         'snes_converged_reason': None,
         'mat_type': 'aij',
@@ -85,12 +87,14 @@ def hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary,
         v, rho = fd.split(wh)
 
         Pif = pi_formula(rho, thetan, R_d, p_0, kappa)
-
+        
         rhoeqn = (
             (cp*fd.inner(v, dv) - cp*fd.div(dv*thetan)*Pif)*fd.dx
             + cp*drho*fd.div(thetan*v)*fd.dx
         )
-        
+
+        RF = fd.assemble(drho*Pif*fd.dx)
+
         if top:
             bmeasure = fd.ds_t
             bstring = "bottom"
