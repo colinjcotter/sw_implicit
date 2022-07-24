@@ -33,7 +33,7 @@ a = 1000.
 xc = 0.
 x, z = fd.SpatialCoordinate(mesh)
 hm = 250.
-zs = hm*fd.exp(-((x-L/2)/5000)**2)*fd.cos(fd.pi*(x-L/2)/4000)**2
+zs = hm*fd.exp(-(x/5000)**2)*fd.cos(fd.pi*x/4000)**2
 
 smooth_z = False
 name = "schaer"
