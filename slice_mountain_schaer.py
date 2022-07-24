@@ -7,11 +7,12 @@ import numpy as np
 dT = fd.Constant(1)
 
 nlayers = 50  # horizontal layers
-base_columns = 150  # number of columns
+base_columns = 100  # number of columns
 L = 100e3
 distribution_parameters = {"partition": True, "overlap_type": (fd.DistributedMeshOverlapType.VERTEX, 2)}
 m = fd.PeriodicIntervalMesh(base_columns, L, distribution_parameters =
                             distribution_parameters)
+m.coordinates.dat.data[:] -= L/2
 
 g = fd.Constant(9.810616)
 N = fd.Constant(0.01)  # Brunt-Vaisala frequency (1/s)
@@ -29,7 +30,7 @@ n = fd.FacetNormal(mesh)
 
 # making a mountain out of a molehill
 a = 1000.
-xc = L/2.
+xc = 0.
 x, z = fd.SpatialCoordinate(mesh)
 hm = 250.
 zs = hm*fd.exp(-((x-L/2)/5000)**2)*fd.cos(fd.pi*(x-L/2)/4000)**2
@@ -171,7 +172,7 @@ unp1, rhonp1, thetanp1 = fd.split(Unp1)
 du, drho, dtheta = fd.TestFunctions(W)
 
 zc = H-10000.
-mubar = 0.15
+mubar = 1.2
 mu_top = fd.conditional(z <= zc, 0.0, mubar*fd.sin((np.pi/2.)*(z-zc)/(H-zc))**2)
 mu = fd.Function(V2).interpolate(mu_top/dT)
 
@@ -193,7 +194,7 @@ un, rhon, thetan = Un.split()
 delta_theta = fd.Function(Vt, name="delta theta").assign(thetan-theta_back)
 delta_rho = fd.Function(V2, name="delta rho").assign(rhon-rho_back)
 
-dt = 4
+dt = 8
 dT.assign(dt)
 
 DG0 = fd.FunctionSpace(mesh, "DG", 0)
