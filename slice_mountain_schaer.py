@@ -4,6 +4,12 @@ from slice_utils import hydrostatic_rho, pi_formula,\
     slice_imr_form, both, maximum, minimum
 import numpy as np
 
+import argparse
+parser = argparse.ArgumentParser(description='Straka testcase.')
+parser.add_argument('--dt', type=float, default=8, help='Timestep in seconds. Default 8.')
+parser.add_argument('--filename', type=str, default='straka')
+parser.add_argument('--show_args', action='store_true', help='Output all the arguments.')
+
 dT = fd.Constant(1)
 
 nlayers = 50  # horizontal layers
@@ -195,7 +201,7 @@ delta_theta = fd.Function(Vt, name="delta theta").assign(thetan-theta_back)
 delta_rho = fd.Function(V2, name="delta rho").assign(rhon-rho_back)
 
 dt = 8
-dT.assign(dt)
+dT.assign(args.dt)
 
 DG0 = fd.FunctionSpace(mesh, "DG", 0)
 One = fd.Function(DG0).assign(1.0)
