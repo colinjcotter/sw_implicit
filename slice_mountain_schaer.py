@@ -48,9 +48,8 @@ hm = 250.
 zs = hm*fd.exp(-(x/5000)**2)*fd.cos(fd.pi*x/4000)**2
 
 smooth_z = False
-name = "schaer"
+name = args.filename
 if smooth_z:
-    name += '_smootherz'
     zh = 5000.
     xexpr = fd.as_vector([x, fd.conditional(z < zh, z + fd.cos(0.5*np.pi*z/zh)**6*zs, z)])
 else:
