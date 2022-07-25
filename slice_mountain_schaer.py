@@ -10,6 +10,12 @@ parser.add_argument('--dt', type=float, default=8, help='Timestep in seconds. De
 parser.add_argument('--filename', type=str, default='straka')
 parser.add_argument('--show_args', action='store_true', help='Output all the arguments.')
 
+args = parser.parse_known_args()
+args = args[0]
+
+if args.show_args:
+    PETSc.Sys.Print(args)
+
 dT = fd.Constant(1)
 
 nlayers = 50  # horizontal layers
