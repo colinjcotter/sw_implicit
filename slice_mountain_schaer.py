@@ -206,8 +206,8 @@ un, rhon, thetan = Un.split()
 delta_theta = fd.Function(Vt, name="delta theta").assign(thetan-theta_back)
 delta_rho = fd.Function(V2, name="delta rho").assign(rhon-rho_back)
 
-dt = 8
-dT.assign(args.dt)
+dt = args.dt
+dT.assign(dt)
 
 DG0 = fd.FunctionSpace(mesh, "DG", 0)
 One = fd.Function(DG0).assign(1.0)
