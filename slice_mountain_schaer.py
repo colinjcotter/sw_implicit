@@ -233,6 +233,8 @@ tdump = 0.
 tmax = 5.0*60*60
 
 PETSc.Sys.Print('tmax', tmax, 'dt', dt)
+itcount = 0
+stepcount = 0
 while t < tmax - 0.5*dt:
     PETSc.Sys.Print(t)
     t += dt
@@ -250,3 +252,6 @@ while t < tmax - 0.5*dt:
         file_gw.write(un, rhon, thetan, delta_rho, delta_theta,
                       Courant)
         tdump -= dumpt
+    stepcount += 1
+    itcount += nsolver.snes.getLinearSolveIterations()
+PETSc.Sys.Print("Iterations", itcount, "its per step", itcount/stepcount)

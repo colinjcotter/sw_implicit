@@ -200,7 +200,8 @@ PETSc.Sys.Print("maxes and mins of Delta theta",
                 minimum(delta_theta))
 
 PETSc.Sys.Print('tmax', tmax, 'dt', dt)
-
+itcount = 0
+stepcount = 0
 
 while t < tmax - 0.5*dt:
     PETSc.Sys.Print(t)
@@ -226,3 +227,6 @@ while t < tmax - 0.5*dt:
         file_gw.write(un, rhon, thetan, delta_rho, delta_theta,
                       Courant, frontdetector, Time)
         tdump -= dumpt
+    stepcount += 1
+    itcount += nsolver.snes.getLinearSolveIterations()
+PETSc.Sys.Print("Iterations", itcount, "its per step", itcount/stepcount)
