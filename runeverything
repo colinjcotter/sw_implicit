@@ -1,18 +1,18 @@
 # 51200/64 = 800, 6400/8 = 800 - equivalent to 400 for lowest order, dt = 4
-mpiexec -n 16 python straka.py --nlayers 8 --ncolumns 64 --dt 4 --dumpt 1 --filename L8straka --show_args --log_view &> straka8.dat
+mpiexec -n 16 python straka.py --nlayers 8 --ncolumns 64 --dt 4 --dumpt 1 --filename L8straka --show_args -log_view &> straka8.dat
 
 # 51200/128 = 400, 6400/16 = 400 - equivalent to 200 for lowest order, dt = 2
-mpiexec -n 16 python straka.py --nlayers 16 --ncolumns 128 --dt 2 --dumpt 1 --filename L16straka --show_args --log_view &> straka16.dat
+mpiexec -n 16 python straka.py --nlayers 16 --ncolumns 128 --dt 2 --dumpt 1 --filename L16straka --show_args -log_view &> straka16.dat
 
 # 51200/256 = 200, 6400/32 = 200 - equivalent to 100 for lowest order, dt = 1
-mpiexec -n 32 python straka.py --nlayers 32 --ncolumns 256 --dt 1 --dumpt 1 --filename L32straka --show_args --log_view &> straka32.dat
+mpiexec -n 32 python straka.py --nlayers 32 --ncolumns 256 --dt 1 --dumpt 1 --filename L32straka --show_args -log_view &> straka32.dat
 
 # 51200/512 = 100, 6400/64 = 100 - equivalent to 50 for lowest order, dt = 0.5
-mpiexec -n 32 python straka.py --nlayers 64 --ncolumns 512 --dt 0.5 --dumpt 1 --filename L64straka --show_args --log_view &> straka64.dat
+mpiexec -n 32 python straka.py --nlayers 64 --ncolumns 512 --dt 0.5 --dumpt 1 --filename L64straka --show_args -log_view &> straka64.dat
 
-mpiexec -n 16 python slice_sk_nh.py --log_view &> sknh.dat
-mpiexec -n 16 python gw_hydrostatic.py --log_view &> skhy.dat
-mpiexec -n 16 python slice_mountain_nh.py --log_view &> agnh.dat
-mpiexec -n 16 python slice_mountain_hydrostatic.py --log_view &> aghy.dat
-mpiexec -n 16 python slice_mountain_schaer.py --log_view &> schaer.dat
-mpiexec -n 16 python slice_mountain_schaer.py --dt 40 --log_view &> schaerlong.dat
+mpiexec -n 16 python slice_sk_nh.py -log_view &> sknh.dat
+mpiexec -n 16 python gw_hydrostatic.py -log_view &> skhy.dat
+mpiexec -n 16 python slice_mountain_nh.py -log_view &> agnh.dat
+mpiexec -n 16 python slice_mountain_hydrostatic.py -log_view &> aghy.dat
+mpiexec -n 16 python slice_mountain_schaer.py -log_view &> schaer.dat
+mpiexec -n 16 python slice_mountain_schaer.py --dt 40 -log_view &> schaerlong.dat
