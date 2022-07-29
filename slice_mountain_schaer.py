@@ -26,11 +26,6 @@ m = fd.PeriodicIntervalMesh(base_columns, L, distribution_parameters =
                             distribution_parameters)
 m.coordinates.dat.data[:] -= L/2
 
-topog_degree = 1
-X = fd.VectorFunctionSpace(m, "Lagrange", topog_degree)
-new_coords = fd.interpolate(m.coordinates, X)
-m = fd.Mesh(new_coords)
-
 g = fd.Constant(9.810616)
 N = fd.Constant(0.01)  # Brunt-Vaisala frequency (1/s)
 cp = fd.Constant(1004.5)  # SHC of dry air at const. pressure (J/kg/K)
