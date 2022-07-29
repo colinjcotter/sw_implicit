@@ -8,7 +8,7 @@ mpiexec -n 16 python straka.py --nlayers 16 --ncolumns 128 --dt 2 --dumpt 1 --fi
 mpiexec -n 32 python straka.py --nlayers 32 --ncolumns 256 --dt 1 --dumpt 1 --filename L32straka --show_args -log_view &> straka32.dat
 
 # 51200/512 = 100, 6400/64 = 100 - equivalent to 50 for lowest order, dt = 0.5
-mpiexec -n 32 python straka.py --nlayers 64 --ncolumns 512 --dt 0.5 --dumpt 1 --filename L64straka --show_args -log_view &> straka64.dat
+mpiexec -n 32 python straka.py --nlayers 64 --ncolumns 512 --dt 0.5 --dumpt 1 --filename L64straka --show_args -rhosolver_snes_rtol 1.0e-6 -log_view &> straka64.dat
 
 mpiexec -n 16 python slice_sk_nh.py -log_view &> sknh.dat
 mpiexec -n 16 python gw_hydrostatic.py -log_view &> skhy.dat
