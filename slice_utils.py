@@ -73,7 +73,7 @@ def hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary,
 
     PiSolver = fd.LinearVariationalSolver(PiProblem,
                                           solver_parameters=lu_params,
-                                          options_prefix="Pisolver")
+                                          options_prefix="pisolver")
     PiSolver.solve()
     v, Pi0 = wh.split()
     if Pi:
