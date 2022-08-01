@@ -279,7 +279,7 @@ def get_form_mass():
     return form_mass
     
 def get_form_function(n, Up, c_pen,
-                      cp, g, R_d, p_0, kappa, mu, f, F):
+                      cp, g, R_d, p_0, kappa, mu, f=None, F=None):
     def form_function(u, rho, theta, du, drho, dtheta):
         eqn = theta_tendency(dtheta, u, theta, n, Up, c_pen)
         eqn += rho_tendency(drho, rho, u, n)
