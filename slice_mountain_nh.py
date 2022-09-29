@@ -6,12 +6,13 @@ import numpy as np
 
 dT = fd.Constant(1)
 
-nlayers = 50  # horizontal layers
-base_columns = 150  # number of columns
-L = 100e3
+nlayers = 70  # horizontal layers
+base_columns = 180  # number of columns
+L = 144e3
 distribution_parameters = {"partition": True, "overlap_type": (fd.DistributedMeshOverlapType.VERTEX, 2)}
 m = fd.PeriodicIntervalMesh(base_columns, L, distribution_parameters =
                             distribution_parameters)
+m.coordinates.dat.data[:] -= L/2
 
 g = fd.Constant(9.810616)
 N = fd.Constant(0.01)  # Brunt-Vaisala frequency (1/s)
@@ -23,13 +24,13 @@ cv = fd.Constant(717.)  # SHC of dry air at const. volume (J/kg/K)
 T_0 = fd.Constant(273.15)  # ref. temperature
 
 # build volume mesh
-H = 30e3  # Height position of the model top
+H = 35e3  # Height position of the model top
 mesh = fd.ExtrudedMesh(m, layers=nlayers, layer_height=H/nlayers)
 n = fd.FacetNormal(mesh)
 
 # making a mountain out of a molehill
 a = 1000.
-xc = L/2.
+xc = 0.
 x, z = fd.SpatialCoordinate(mesh)
 hm = 1.
 zs = hm*a**2/((x-xc)**2 + a**2)
@@ -74,7 +75,7 @@ Unp1 = fd.Function(W)
 x, z = fd.SpatialCoordinate(mesh)
 
 # N^2 = (g/theta)dtheta/dz => dtheta/dz = theta N^2g => theta=theta_0exp(N^2gz)
-Tsurf = fd.Constant(288.)
+Tsurf = fd.Constant(300.)
 thetab = Tsurf*fd.exp(N**2*z/g)
 
 cp = fd.Constant(1004.5)  # SHC of dry air at const. pressure (J/kg/K)
@@ -83,40 +84,43 @@ Up = fd.as_vector([fd.Constant(0.0), fd.Constant(1.0)]) # up direction
 un, rhon, thetan = Un.split()
 thetan.interpolate(thetab)
 theta_back = fd.Function(Vt).assign(thetan)
-rhon.assign(1.0e-5)
 
 Pi = fd.Function(V2)
 
-hydrostatic_rho(Vv, V2, mesh, thetan, rhon=None, pi_boundary=fd.Constant(1),
+PETSc.Sys.Print("Solve with Pi_b = 1")
+bdyC = fd.Constant(1)
+hydrostatic_rho(Vv, V2, mesh, thetan, rhon=None, pi_boundary=bdyC,
                     cp=cp, R_d=R_d, p_0=p_0, kappa=kappa, g=g, Up=Up,
                     top=False, Pi=Pi)
 bdyval = minimum(Pi)
 
-hydrostatic_rho(Vv, V2, mesh, thetan, rhon=None,
-                pi_boundary=fd.Constant(bdyval),
+PETSc.Sys.Print("Solve with Pi_t =", bdyval)
+bdyC.assign(bdyval)
+hydrostatic_rho(Vv, V2, mesh, thetan, rhon=None, pi_boundary=bdyC,
                 cp=cp, R_d=R_d, p_0=p_0, kappa=kappa, g=g, Up=Up,
                 top=True, Pi=Pi)
+maxP = maximum(Pi)
 
-p0 = maximum(Pi)
+bdyval0 = bdyval*0.9
+bdyval1 = bdyval*2
+Ptarg = 1.
+while np.abs(maxP-Ptarg) > 1.0e-7:
+    bdyval = 0.5*(bdyval0 + bdyval1)
+    bdyC.assign(bdyval)
+    PETSc.Sys.Print("Solve with Pi_t = ", bdyval)
+    hydrostatic_rho(Vv, V2, mesh, thetan, rhon=None,
+                    pi_boundary=bdyC,
+                    cp=cp, R_d=R_d, p_0=p_0, kappa=kappa, g=g, Up=Up,
+                    top=True, Pi=Pi)
+    maxP = maximum(Pi)
+    PETSc.Sys.Print(bdyval, bdyval0, bdyval1)
+    if maxP < Ptarg:
+        bdyval0 = bdyval*1.0
+    else:
+        bdyval1 = bdyval*1.0
+    PETSc.Sys.Print(bdyval, bdyval0, bdyval1)
 
-hydrostatic_rho(Vv, V2, mesh, thetan, rhon=None,
-                pi_boundary=fd.Constant(bdyval*0.9),
-                cp=cp, R_d=R_d, p_0=p_0, kappa=kappa, g=g, Up=Up,
-                top=True, Pi=Pi)
-
-p1 = maximum(Pi)
-
-# pbot = beta + alpha*ptop
-# p0 = beta + alpha*bdyval
-# p1 = beta + alpha*0.9*bdyval
-# p0 - p1 = alpha*bdyval*(1.0-0.9) = alpha*bdyval*0.1
-# alpha = (p1-p0)/0.1/bdyval
-alpha = (p1-p0)/bdyval/0.1
-beta = p0-alpha*bdyval
-# 1 = beta + alpha*ptop
-pi_top = (1.-beta)/alpha
-
-hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary=fd.Constant(pi_top),
+hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary=bdyC,
                     cp=cp, R_d=R_d, p_0=p_0, kappa=kappa, g=g, Up=Up,
                     top=True)
 
@@ -157,9 +161,9 @@ sparameters = {
     "pc_type": "python",
     "pc_python_type": "firedrake.AssembledPC",
     "assembled_pc_type": "python",
-    "assembled_pc_python_type": "firedrake.ASMVankaPC",
-    "assembled_pc_vanka_construct_dim": 0,
-    "assembled_pc_vanka_sub_sub_pc_factor_mat_ordering_type": "rcm"
+    "assembled_pc_python_type": "firedrake.ASMStarPC",
+    "assembled_pc_star_construct_dim": 0,
+    "assembled_pc_star_sub_sub_pc_factor_mat_ordering_type": "rcm"
 }
 
 un.project(fd.as_vector([10.0, 0.0]))
@@ -168,10 +172,13 @@ un.project(fd.as_vector([10.0, 0.0]))
 un, rhon, thetan = fd.split(Un)
 unp1, rhonp1, thetanp1 = fd.split(Unp1)
 
+dt = 5
+dT.assign(dt)
+
 du, drho, dtheta = fd.TestFunctions(W)
 
 zc = H-10000.
-mubar = 0.3
+mubar = 0.15
 mu_top = fd.conditional(z <= zc, 0.0, mubar*fd.sin((np.pi/2.)*(z-zc)/(H-zc))**2)
 mu = fd.Function(V2).interpolate(mu_top/dT)
 
@@ -192,9 +199,6 @@ file_gw = fd.File(name+'.pvd')
 un, rhon, thetan = Un.split()
 delta_theta = fd.Function(Vt, name="delta theta").assign(thetan-theta_back)
 delta_rho = fd.Function(V2, name="delta rho").assign(rhon-rho_back)
-
-dt = 5
-dT.assign(dt)
 
 DG0 = fd.FunctionSpace(mesh, "DG", 0)
 One = fd.Function(DG0).assign(1.0)
@@ -220,6 +224,9 @@ dumpt = 500.
 tdump = 0.
 tmax = 9000.
 
+itcount = 0
+stepcount = 0
+
 PETSc.Sys.Print('tmax', tmax, 'dt', dt)
 while t < tmax - 0.5*dt:
     PETSc.Sys.Print(t)
@@ -238,3 +245,6 @@ while t < tmax - 0.5*dt:
         file_gw.write(un, rhon, thetan, delta_rho, delta_theta,
                       Courant)
         tdump -= dumpt
+    stepcount += 1
+    itcount += nsolver.snes.getLinearSolveIterations()
+PETSc.Sys.Print("Iterations", itcount, "its per step", itcount/stepcount)

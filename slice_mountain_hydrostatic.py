@@ -6,8 +6,8 @@ import numpy as np
 
 dT = fd.Constant(1)
 
-nlayers = 50  # horizontal layers
-base_columns = 150  # number of columns
+nlayers = 100  # horizontal layers 50./100 = 0.5 = 2*250
+base_columns = 60  # number of columns 240000/60 = 4000 = 2*2000
 L = 240e3
 distribution_parameters = {"partition": True, "overlap_type": (fd.DistributedMeshOverlapType.VERTEX, 2)}
 
@@ -15,6 +15,8 @@ m = fd.PeriodicRectangleMesh(base_columns, ny=1, Lx=L, Ly=1.0e-3*L,
                              direction="both",
                              quadrilateral=True,
                              distribution_parameters=distribution_parameters)
+m.coordinates.dat.data[:,0] -= L/2
+m.coordinates.dat.data[:,1] -= 1.0e-3*L/2
 
 g = fd.Constant(9.810616)
 N = fd.Constant(0.01)  # Brunt-Vaisala frequency (1/s)
@@ -30,10 +32,9 @@ H = 50e3  # Height position of the model top
 mesh = fd.ExtrudedMesh(m, layers=nlayers, layer_height=H/nlayers)
 n = fd.FacetNormal(mesh)
 
-name = "hydrostatic_agnesi"
 # making a mountain out of a molehill
 a = 10000.
-xc = L/2.
+xc = 0.
 x, y, z = fd.SpatialCoordinate(mesh)
 hm = 1.
 zs = hm*a**2/((x-xc)**2 + a**2)
@@ -78,6 +79,11 @@ Unp1 = fd.Function(W)
 x, y, z = fd.SpatialCoordinate(mesh)
 
 # N^2 = (g/theta)dtheta/dz => dtheta/dz = theta N^2g => theta=theta_0exp(N^2gz)
+# Isothermal T = theta*pi is constant
+# pi = T/theta => pi_z = -T/theta^2 theta_z
+# so -g = cp theta pi_z = -T/theta theta_z
+# so theta_z = theta*g/T/cp
+# i.e. theta = theta_0 exp(g*z/T/cp)
 Tsurf = fd.Constant(250.)
 N = g/fd.sqrt(cp*Tsurf)
 thetab = Tsurf*fd.exp(N**2*z/g)
@@ -142,9 +148,9 @@ sparameters = {
     "pc_type": "python",
     "pc_python_type": "firedrake.AssembledPC",
     "assembled_pc_type": "python",
-    "assembled_pc_python_type": "firedrake.ASMVankaPC",
-    "assembled_pc_vanka_construct_dim": 0,
-    "assembled_pc_vanka_sub_sub_pc_factor_mat_ordering_type": "rcm"
+    "assembled_pc_python_type": "firedrake.ASMStarPC",
+    "assembled_pc_star_construct_dim": 0,
+    "assembled_pc_star_sub_sub_pc_factor_mat_ordering_type": "rcm"
 }
 
 un.project(fd.as_vector([fd.Constant(20.0),
@@ -185,7 +191,7 @@ un, rhon, thetan = Un.split()
 delta_theta = fd.Function(Vt, name="delta theta").assign(thetan-theta_back)
 delta_rho = fd.Function(V2, name="delta rho").assign(rhon-rho_back)
 
-dt = 10
+dt = 20
 dT.assign(dt)
 
 DG0 = fd.FunctionSpace(mesh, "DG", 0)
@@ -213,6 +219,9 @@ tdump = 0.
 tmax = 15000.
 dumpt = tmax/60
 
+itcount = 0
+stepcount = 0
+
 PETSc.Sys.Print('tmax', tmax, 'dt', dt)
 while t < tmax - 0.5*dt:
     PETSc.Sys.Print(t)
@@ -231,3 +240,6 @@ while t < tmax - 0.5*dt:
         file_gw.write(un, rhon, thetan, delta_rho, delta_theta,
                       Courant)
         tdump -= dumpt
+    stepcount += 1
+    itcount += nsolver.snes.getLinearSolveIterations()
+PETSc.Sys.Print("Iterations", itcount, "its per step", itcount/stepcount)

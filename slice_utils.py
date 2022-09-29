@@ -1,26 +1,28 @@
 import firedrake as fd
 import numpy as np
 from firedrake import op2
+from petsc4py import PETSc
 
 def maximum(f):
-    fmax = op2.Global(1, [-1000], dtype=float)
+    fmax = op2.Global(1, [-1e50], dtype=float)
     op2.par_loop(op2.Kernel("""
 static void maxify(double *a, double *b) {
-    a[0] = a[0] < fabs(b[0]) ? fabs(b[0]) : a[0];
+    a[0] = a[0] < b[0] ? b[0] : a[0];
 }
 """, "maxify"), f.dof_dset.set, fmax(op2.MAX), f.dat(op2.READ))
     return fmax.data[0]
 
 def minimum(f):
-    fmin = op2.Global(1, [1000], dtype=float)
+    fmin = op2.Global(1, [1e50], dtype=float)
     op2.par_loop(op2.Kernel("""
 static void minify(double *a, double *b) {
-    a[0] = a[0] > fabs(b[0]) ? fabs(b[0]) : a[0];
+    a[0] = a[0] > b[0] ? b[0] : a[0];
 }
 """, "minify"), f.dof_dset.set, fmin(op2.MIN), f.dat(op2.READ))
     return fmin.data[0]
 
 def pi_formula(rho, theta, R_d, p_0, kappa):
+    
     return (rho * R_d * theta / p_0) ** (kappa / (1 - kappa))
 
 def rho_formula(pi, theta, R_d, p_0, kappa):
@@ -61,35 +63,38 @@ def hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary,
         
     lu_params = {
         'snes_monitor': None,
+        'snes_stol': 1.0e-50,
         'ksp_monitor': None,
         'snes_converged_reason': None,
         'mat_type': 'aij',
         'pc_type': 'lu',
         "pc_factor_mat_ordering_type": "rcm",
-        "pc_factor_mat_solver_type": "mumps"
     }
 
     PiSolver = fd.LinearVariationalSolver(PiProblem,
                                           solver_parameters=lu_params,
-                                          options_prefix="Pisolver")
+                                          options_prefix="pisolver")
     PiSolver.solve()
     v, Pi0 = wh.split()
     if Pi:
         Pi.assign(Pi0)
-
+    PETSc.Sys.Print("pi",maximum(Pi0))
     if rhon:
-        rhon.project(rho_formula(Pi0, thetan, R_d, p_0, kappa))
+        rhon.interpolate(rho_formula(Pi0, thetan, R_d, p_0, kappa))
+        PETSc.Sys.Print(maximum(rhon), minimum(rhon))
         v,  rho = wh.split()
         rho.assign(rhon)
         v, rho = fd.split(wh)
 
         Pif = pi_formula(rho, thetan, R_d, p_0, kappa)
-
+        
         rhoeqn = (
             (cp*fd.inner(v, dv) - cp*fd.div(dv*thetan)*Pif)*fd.dx
             + cp*drho*fd.div(thetan*v)*fd.dx
         )
-        
+
+        RF = fd.assemble(drho*Pif*fd.dx)
+
         if top:
             bmeasure = fd.ds_t
             bstring = "bottom"
@@ -125,14 +130,14 @@ def theta_tendency(q, u, theta, n, Up, c_pen):
                       - unn('-')*theta('-'))*fd.dS_v
         - fd.jump(q*u*theta, n)*fd.dS_v
         )
-    #jump stabilisation in the vertical
+    #jump stabilisation
     mesh = u.ufl_domain()
     h = fd.avg(fd.CellVolume(mesh))/fd.FacetArea(mesh)
 
     eqn += (
         h**2*c_pen*abs(fd.inner(u('+'),n('+')))
-        *fd.jump(fd.inner(fd.grad(theta), Up))
-        *fd.jump(fd.inner(fd.grad(q), Up))*fd.dS_h)
+        *fd.inner(fd.jump(fd.grad(theta)),
+                  fd.jump(fd.grad(q)))*(fd.dS_v + fd.dS_h))
     return eqn
 
 def theta_mass(q, theta):

@@ -6,8 +6,8 @@ import numpy as np
 
 dT = fd.Constant(1)
 
-nlayers = 50  # horizontal layers
-base_columns = 150  # number of columns
+nlayers = 10  # horizontal layers
+base_columns = 300  # number of columns
 L = 6000e3
 distribution_parameters = {"partition": True, "overlap_type": (fd.DistributedMeshOverlapType.VERTEX, 2)}
 
@@ -15,6 +15,8 @@ m = fd.PeriodicRectangleMesh(base_columns, ny=1, Lx=L, Ly=1.0e-3*L,
                              direction="both",
                              quadrilateral=True,
                              distribution_parameters=distribution_parameters)
+m.coordinates.dat.data[:,0] -= L/2
+m.coordinates.dat.data[:,1] -= 1.0e-3*L/2
 
 g = fd.Constant(9.810616)
 N = fd.Constant(0.01)  # Brunt-Vaisala frequency (1/s)
@@ -82,7 +84,7 @@ hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary=fd.Constant(1.0),
 
 rho_back = fd.Function(V2).assign(rhon)
 
-sparameters = {
+lines_parameters = {
     "snes_converged_reason": None,
     "mat_type": "matfree",
     "ksp_type": "gmres",
@@ -93,14 +95,17 @@ sparameters = {
     "pc_type": "python",
     "pc_python_type": "firedrake.AssembledPC",
     "assembled_pc_type": "python",
-    "assembled_pc_python_type": "firedrake.ASMVankaPC",
-    "assembled_pc_vanka_construct_dim": 0,
-    "assembled_pc_vanka_sub_sub_pc_factor_mat_ordering_type": "rcm"
+    "assembled_pc_python_type": "firedrake.ASMStarPC",
+    "assembled_pc_star_construct_dim": 0,
+    "assembled_pc_star_sub_sub_pc_factor_mat_ordering_type": "rcm",
+    "assembled_pc_star_sub_sub_pc_factor_reuse_ordering": None,
+    "assembled_pc_star_sub_sub_pc_factor_reuse_fill": None,
+    "assembled_pc_star_sub_sub_pc_factor_fill": 1.2,
 }
 
 a = fd.Constant(100.0e3)
 deltaTheta = fd.Constant(1.0e-2)
-theta_pert = deltaTheta*fd.sin(np.pi*z/H)/(1 + (x - L/2)**2/a**2)
+theta_pert = deltaTheta*fd.sin(np.pi*z/H)/(1 + x**2/a**2)
 thetan.interpolate(thetan + theta_pert)
 un.project(fd.as_vector([fd.Constant(20.0),
                          fd.Constant(0.0),
@@ -126,7 +131,8 @@ bcs = [fd.DirichletBC(W.sub(0), 0., "bottom"),
 
 nprob = fd.NonlinearVariationalProblem(eqn, Unp1, bcs=bcs)
 
-nsolver = fd.NonlinearVariationalSolver(nprob, solver_parameters=sparameters,
+nsolver = fd.NonlinearVariationalSolver(nprob, solver_parameters=
+                                        lines_parameters,
                                         options_prefix="nsolver")
     
 file_gw = fd.File(name+'.pvd')
@@ -134,7 +140,7 @@ un, rhon, thetan = Un.split()
 delta_theta = fd.Function(Vt, name="delta theta").assign(thetan-theta_back)
 delta_rho = fd.Function(V2, name="delta rho").assign(rhon-rho_back)
 
-dt = 50
+dt = 100
 dT.assign(dt)
 
 DG0 = fd.FunctionSpace(mesh, "DG", 0)
@@ -161,6 +167,9 @@ tdump = 0.
 tmax = 60000.
 dumpt = tmax/60
 
+itcount = 0
+stepcount = 0
+
 PETSc.Sys.Print('tmax', tmax, 'dt', dt)
 while t < tmax - 0.5*dt:
     PETSc.Sys.Print(t)
@@ -179,3 +188,6 @@ while t < tmax - 0.5*dt:
         file_gw.write(un, rhon, thetan, delta_rho, delta_theta,
                       Courant)
         tdump -= dumpt
+    stepcount += 1
+    itcount += nsolver.snes.getLinearSolveIterations()
+PETSc.Sys.Print("Iterations", itcount, "its per step", itcount/stepcount)
