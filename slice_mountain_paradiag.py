@@ -4,7 +4,7 @@ import numpy as np
 from slice_utils import hydrostatic_rho, pi_formula,\
     get_form_mass, get_form_function, both, maximum
 from petsc4py import PETSc
-
+PETSc.Sys.popErrorHandler()
 dT = fd.Constant(1)
 
 nlayers = 50  # horizontal layers
@@ -14,6 +14,10 @@ distribution_parameters = {"partition": True, "overlap_type": (fd.DistributedMes
 
 # set up the ensemble communicator for space-time parallelism
 nspatial_domains = 4
+M = [2, 2, 2, 2]
+
+# we expect 16 processors
+
 ensemble = fd.Ensemble(fd.COMM_WORLD, nspatial_domains)
 m = fd.PeriodicIntervalMesh(base_columns, L, distribution_parameters =
                             distribution_parameters,
@@ -135,6 +139,7 @@ for bc in bcs:
 lines_parameters = {
     "ksp_type": "gmres",
     "ksp_converged_reason": None,
+    "ksp_monitor": None,
     "pc_type": "python",
     "pc_python_type": "firedrake.AssembledPC",
     "assembled_pc_type": "python",
@@ -142,38 +147,6 @@ lines_parameters = {
     "assembled_pc_vanka_construct_dim": 0,
     "assembled_pc_vanka_sub_sub_pc_type": "lu",
     "assembled_pc_vanka_sub_sub_pc_factor_mat_solver_type" : 'mumps',
-}
-
-lu_parameters = {
-    "ksp_type": "preonly",
-    "pc_type": "python",
-    "pc_python_type": "firedrake.AssembledPC",
-    "assembled_pc_type": "jacobi"
-}
-
-mg_sparameters = {
-    "mat_type": "matfree",
-    "ksp_type": "fgmres",
-    "ksp_monitor_true_residual": None,
-    "ksp_converged_reason": None,
-    "ksp_atol": 1e-8,
-    "ksp_rtol": 1e-8,
-    "ksp_max_it": 400,
-    "pc_type": "mg",
-    "pc_mg_cycle_type": "v",
-    "pc_mg_type": "multiplicative",
-    "mg_levels_ksp_type": "gmres",
-    "mg_levels_ksp_max_it": 3,
-    #"mg_levels_ksp_convergence_test": "skip",
-    "mg_levels_pc_type": "python",
-    "mg_levels_pc_python_type": "firedrake.AssembledPC",
-    "mg_levels_assembled_pc_type": "python",
-    "mg_levels_assembled_pc_python_type": "firedrake.ASMStarPC",
-    "mg_levels_assembled_pc_star_construct_dim": 0,
-    "mg_coarse_pc_type": "python",
-    "mg_coarse_pc_python_type": "firedrake.AssembledPC",
-    "mg_coarse_assembled_pc_type": "lu",
-    "mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
 }
 
 solver_parameters_diag = {
@@ -192,7 +165,6 @@ solver_parameters_diag = {
     'pc_type': 'python',
     'pc_python_type': 'asQ.DiagFFTPC'}
 
-M = [2, 2, 2, 2]
 for i in range(np.sum(M)):
     solver_parameters_diag["diagfft_"+str(i)+"_"] = lines_parameters
 
@@ -206,19 +178,18 @@ theta = 0.5
 
 PD = asQ.paradiag(ensemble=ensemble,
                   form_function=form_function,
-                  form_mass=form_mass, W=W, w0=Un,
+                  form_mass=form_mass, w0=Un,
                   dt=dt, theta=theta,
-                  alpha=alpha,
-                  M=M, bcs=bcs,
+                  alpha=alpha, time_partition=M, bcs=bcs,
                   solver_parameters=solver_parameters_diag,
                   circ="none",
                   tol=1.0e-6, maxits=None,
                   ctx={}, block_mat_type="aij")
 
-r = PD.rT
+r = PD.time_rank
 
 # only last slice does diagnostics/output
-if PD.rT == len(M)-1:
+if PD.time_rank == len(M)-1:
 
     uout = fd.Function(V1, name='velocity')
     thetaout = fd.Function(Vt, name='temperature')
