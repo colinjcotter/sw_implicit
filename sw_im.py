@@ -10,11 +10,11 @@ parser.add_argument('--ref_level', type=int, default=5, help='Refinement level o
 parser.add_argument('--dmax', type=float, default=15, help='Final time in days. Default 15.')
 parser.add_argument('--dumpt', type=float, default=24, help='Dump time in hours. Default 24.')
 parser.add_argument('--gamma', type=float, default=1.0e5, help='Augmented Lagrangian scaling parameter. Default 10000 for AL mode.')
-parser.add_argument('--solver_mode', type=str, default='monolithic', help='Solver strategy. monolithic=use monolithic MG with Schwarz smoothers. AL=use augmented Lagrangian formulation. Default = monolithic')
+parser.add_argument('--solver_mode', type=str, default='monolithic', help='Solver strategy. monolithic=use monolithic MG with Schwarz smoothers. AL=use augmented Lagrangian formulation. ALL=use augmented Lagrangian formulation in the preconditioner only. Default = monolithic')
 parser.add_argument('--dt', type=float, default=1, help='Timestep in hours. Default 1.')
 parser.add_argument('--filename', type=str, default='w5aug')
-parser.add_argument('--coords_degree', type=int, default=3, help='Degree of polynomials for sphere mesh approximation.')
-parser.add_argument('--degree', type=int, default=2, help='Degree of finite element space (the DG space).')
+parser.add_argument('--coords_degree', type=int, default=1, help='Degree of polynomials for sphere mesh approximation.')
+parser.add_argument('--degree', type=int, default=1, help='Degree of finite element space (the DG space).')
 parser.add_argument('--kspschur', type=int, default=40, help='Max number of KSP iterations on the Schur complement. Default 40.')
 parser.add_argument('--kspmg', type=int, default=3, help='Max number of KSP iterations in the MG levels. Default 3.')
 parser.add_argument('--tlblock', type=str, default='mg', help='Solver for the velocity-velocity block. mg==Multigrid with patchPC, lu==direct solver with MUMPS, patch==just do a patch smoother. Default is mg')
@@ -198,12 +198,15 @@ else:
 # Df(x^k).xp = -f(x^k)
 # x^{k+1} = x^k + xp.
 
-class HelmholtzPC(fd.PCBase):
+# PC transforming to AL form and using approximate Schur complement
+class ALPC(fd.PCBase):
     def initialize(self, pc):
         if pc.getType() != "python":
             raise ValueError("Expecting PC type python")
-        prefix = pc.getOptionsPrefix() + "helmholtz_"
+        prefix = pc.getOptionsPrefix() + "al_"
 
+        # we want to divide the height part by the mass,
+        # apply 
         mm_solve_parameters = {
             'ksp_type':'preonly',
             'pc_type':'bjacobi',
@@ -280,7 +283,6 @@ class HelmholtzPC(fd.PCBase):
         with self.yf.dat.vec_ro as v:
             v.copy(y)
 
-
 if args.solver_mode == 'AL':
     
     sparameters = {
@@ -293,18 +295,6 @@ if args.solver_mode == 'AL':
         "pc_fieldsplit_type": "schur",
         #"pc_fieldsplit_schur_fact_type": "full",
         "pc_fieldsplit_off_diag_use_amat": True,
-    }
-
-    bottomright_helm = {
-        "ksp_type": "fgmres",
-        "ksp_monitor": None,
-        "ksp_gmres_modifiedgramschmidt": None,
-        "ksp_max_it": args.kspschur,
-        "pc_type": "python",
-        "pc_python_type": "__main__.HelmholtzPC",
-        "helmholtz" :
-        {"ksp_type":"preonly",
-         "pc_type": "lu"}
     }
 
     bottomright_mass = {
@@ -405,6 +395,9 @@ if args.solver_mode == 'AL':
     else:
         assert(args.tlblock=="lu")
         sparameters["fieldsplit_0"] = topleft_LU
+
+elif args.solver_mode == 'ALL':
+        
 elif args.solver_mode == 'monolithic':
     # monolithic solver options
 
@@ -428,8 +421,8 @@ elif args.solver_mode == 'monolithic':
         "mg_levels_patch_pc_patch_save_operators": True,
         "mg_levels_patch_pc_patch_partition_of_unity": True,
         "mg_levels_patch_pc_patch_sub_mat_type": "seqdense",
-        "mg_levels_patch_pc_patch_construct_codim": 0,
-        "mg_levels_patch_pc_patch_construct_type": "vanka",
+        "mg_levels_patch_pc_patch_construct_dim": 0,
+        "mg_levels_patch_pc_patch_construct_type": "star",
         "mg_levels_patch_pc_patch_local_type": "additive",
         "mg_levels_patch_pc_patch_precompute_element_tensors": True,
         "mg_levels_patch_pc_patch_symmetrise_sweep": False,
@@ -518,13 +511,7 @@ while t < tmax + 0.5*dt:
     tdump += dt
 
     nsolver.solve()
-    res = fd.assemble(testeqn)
-    PETSc.Sys.Print(res.dat.data[0].max(), res.dat.data[0].min(),
-          res.dat.data[1].max(), res.dat.data[1].min())
     Un.assign(Unp1)
-    res = fd.assemble(testeqn)
-    PETSc.Sys.Print(res.dat.data[0].max(), res.dat.data[0].min(),
-          res.dat.data[1].max(), res.dat.data[1].min())
     
     if tdump > dumpt - dt*0.5:
         etan.assign(h0 - H + b)
