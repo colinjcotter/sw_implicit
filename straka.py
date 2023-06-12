@@ -174,7 +174,7 @@ fd.assemble(One*v*fd.dx, tensor=Courant_denom)
 Courant = fd.Function(DG0, name="Courant")
 
 fd.assemble(Courant_num_form, tensor=Courant_num)
-Courant.assign(Courant_num/Courant_denom)
+Courant.interpolate(Courant_num/Courant_denom)
 
 DG = fd.FunctionSpace(mesh, "DG", 0)
 frontdetector = fd.Function(DG)
