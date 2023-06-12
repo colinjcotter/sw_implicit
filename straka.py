@@ -22,8 +22,6 @@ args = args[0]
 if args.show_args:
     PETSc.Sys.Print(args)
 
-dT = fd.Constant(1, domain=mesh)
-
 nlayers = args.nlayers
 base_columns = args.ncolumns
 dt = args.dt # timestep
@@ -34,6 +32,12 @@ m = fd.PeriodicIntervalMesh(base_columns, L, distribution_parameters =
 #translate the mesh to the left by 51200/25600
 m.coordinates.dat.data[:] -= 25600
 
+# build volume mesh
+H = 6400.  # Height position of the model top
+mesh = fd.ExtrudedMesh(m, layers=nlayers, layer_height=H/nlayers)
+n = fd.FacetNormal(mesh)
+
+dT = fd.Constant(1, domain=mesh)
 g = fd.Constant(9.810616, domain=mesh)
 N = fd.Constant(0.01, domain=mesh)  # Brunt-Vaisala frequency (1/s)
 cp = fd.Constant(1004.5, domain=mesh)  # SHC of dry air at const. pressure (J/kg/K)
@@ -42,11 +46,6 @@ kappa = fd.Constant(2.0/7.0, domain=mesh)  # R_d/c_p
 p_0 = fd.Constant(1000.0*100.0, domain=mesh)  # reference pressure (Pa, not hPa)
 cv = fd.Constant(717., domain=mesh)  # SHC of dry air at const. volume (J/kg/K)
 T_0 = fd.Constant(273.15, domain=mesh)  # ref. temperature
-
-# build volume mesh
-H = 6400.  # Height position of the model top
-mesh = fd.ExtrudedMesh(m, layers=nlayers, layer_height=H/nlayers)
-n = fd.FacetNormal(mesh)
 
 name = args.filename    
 horizontal_degree = args.degree
