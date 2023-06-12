@@ -296,7 +296,7 @@ def form_viscosity(u, v, kappa, mu = fd.Constant(10.0)):
     def get_flux_form(dS):
         fluxes = (-fd.inner(2*fd.avg(fd.outer(v, n)), fd.avg(fd.grad(u)))
                   - fd.inner(fd.avg(fd.grad(v)), 2*fd.avg(fd.outer(u, n)))
-                  + mu*h*fd.inner(2*fd.avg(fd.outer(v, n)),
+                  + mu/h*fd.inner(2*fd.avg(fd.outer(v, n)),
                                2*fd.avg(fd.outer(u, n))))*dS
         return fluxes
 

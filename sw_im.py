@@ -46,7 +46,7 @@ def high_order_mesh_hierarchy(mh, degree, R0):
         new_coords = fd.interpolate(m.coordinates, X)
         x, y, z = new_coords
         r = (x**2 + y**2 + z**2)**0.5
-        new_coords.assign(R0*new_coords/r)
+        new_coords.interpolate(R0*new_coords/r)
         new_mesh = fd.Mesh(new_coords)
         meshes.append(new_mesh)
 
@@ -397,7 +397,7 @@ if args.solver_mode == 'AL':
         sparameters["fieldsplit_0"] = topleft_LU
 
 elif args.solver_mode == 'ALL':
-        
+        pass
 elif args.solver_mode == 'monolithic':
     # monolithic solver options
 
@@ -476,7 +476,7 @@ lambda_x = fd.atan_2(x[1]/R0, x[0]/R0)
 lambda_c = -fd.pi/2.0
 phi_x = fd.asin(x[2]/R0)
 phi_c = fd.pi/6.0
-minarg = fd.Min(pow(rl, 2),
+minarg = fd.min_value(pow(rl, 2),
                 pow(phi_x - phi_c, 2) + pow(lambda_x - lambda_c, 2))
 bexpr = 2000.0*(1 - fd.sqrt(minarg)/rl)
 b.interpolate(bexpr)

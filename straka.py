@@ -22,7 +22,7 @@ args = args[0]
 if args.show_args:
     PETSc.Sys.Print(args)
 
-dT = fd.Constant(1)
+dT = fd.Constant(1, domain=mesh)
 
 nlayers = args.nlayers
 base_columns = args.ncolumns
@@ -34,14 +34,14 @@ m = fd.PeriodicIntervalMesh(base_columns, L, distribution_parameters =
 #translate the mesh to the left by 51200/25600
 m.coordinates.dat.data[:] -= 25600
 
-g = fd.Constant(9.810616)
-N = fd.Constant(0.01)  # Brunt-Vaisala frequency (1/s)
-cp = fd.Constant(1004.5)  # SHC of dry air at const. pressure (J/kg/K)
-R_d = fd.Constant(287.)  # Gas constant for dry air (J/kg/K)
-kappa = fd.Constant(2.0/7.0)  # R_d/c_p
-p_0 = fd.Constant(1000.0*100.0)  # reference pressure (Pa, not hPa)
-cv = fd.Constant(717.)  # SHC of dry air at const. volume (J/kg/K)
-T_0 = fd.Constant(273.15)  # ref. temperature
+g = fd.Constant(9.810616, domain=mesh)
+N = fd.Constant(0.01, domain=mesh)  # Brunt-Vaisala frequency (1/s)
+cp = fd.Constant(1004.5, domain=mesh)  # SHC of dry air at const. pressure (J/kg/K)
+R_d = fd.Constant(287., domain=mesh)  # Gas constant for dry air (J/kg/K)
+kappa = fd.Constant(2.0/7.0, domain=mesh)  # R_d/c_p
+p_0 = fd.Constant(1000.0*100.0, domain=mesh)  # reference pressure (Pa, not hPa)
+cv = fd.Constant(717., domain=mesh)  # SHC of dry air at const. volume (J/kg/K)
+T_0 = fd.Constant(273.15, domain=mesh)  # ref. temperature
 
 # build volume mesh
 H = 6400.  # Height position of the model top
@@ -79,18 +79,18 @@ Unp1 = fd.Function(W)
 x, z = fd.SpatialCoordinate(mesh)
 
 # N^2 = (g/theta)dtheta/dz => dtheta/dz = theta N^2g => theta=theta_0exp(N^2gz)
-Tsurf = fd.Constant(300.)
+Tsurf = fd.Constant(300., domain=mesh)
 thetab = Tsurf
 
 cp = fd.Constant(1004.5)  # SHC of dry air at const. pressure (J/kg/K)
-Up = fd.as_vector([fd.Constant(0.0), fd.Constant(1.0)]) # up direction
+Up = fd.as_vector([fd.Constant(0.0, domain=mesh), fd.Constant(1.0, domain=mesh)]) # up direction
 
 un, rhon, thetan = Un.split()
 thetan.interpolate(thetab)
 theta_back = fd.Function(Vt).assign(thetan)
 rhon.assign(1.0e-5)
 
-hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary=fd.Constant(1.0),
+hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary=fd.Constant(1.0, domain=mesh),
                     cp=cp, R_d=R_d, p_0=p_0, kappa=kappa, g=g, Up=Up,
                     top=False)
 
@@ -140,11 +140,11 @@ du, drho, dtheta = fd.TestFunctions(W)
 
 eqn = slice_imr_form(un, unp1, rhon, rhonp1, thetan, thetanp1,
                      du, drho, dtheta,
-                     dT=dT, n=n, Up=Up, c_pen=fd.Constant(2.0**(-7./2)),
+                     dT=dT, n=n, Up=Up, c_pen=fd.Constant(2.0**(-7./2), domain=mesh),
                      cp=cp, g=g, R_d=R_d, p_0=p_0,
                      kappa=kappa, mu=None,
-                     viscosity=fd.Constant(75.),
-                     diffusivity=fd.Constant(75.))
+                     viscosity=fd.Constant(75., domain=mesh),
+                     diffusivity=fd.Constant(75., domain=mesh))
 
 bcs = [fd.DirichletBC(W.sub(0), 0., "bottom"),
        fd.DirichletBC(W.sub(0), 0., "top")]
@@ -180,7 +180,7 @@ Courant.assign(Courant_num/Courant_denom)
 DG = fd.FunctionSpace(mesh, "DG", 0)
 frontdetector = fd.Function(DG)
 
-front_expr = fd.conditional(thetan < fd.Constant(Tsurf*0.999), x[0], 0)
+front_expr = fd.conditional(thetan < fd.Constant(Tsurf*0.999, domain=mesh), x[0], 0)
 
 frontdetector.interpolate(front_expr)
 
@@ -223,7 +223,7 @@ while t < tmax - 0.5*dt:
         delta_rho.assign(rhon-rho_back)
 
         fd.assemble(Courant_num_form, tensor=Courant_num)
-        Courant.assign(Courant_num/Courant_denom)
+        Courant.interpolate(Courant_num/Courant_denom)
         file_gw.write(un, rhon, thetan, delta_rho, delta_theta,
                       Courant, frontdetector, Time)
         tdump -= dumpt
