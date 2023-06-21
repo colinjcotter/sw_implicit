@@ -5,6 +5,10 @@ from slice_utils import hydrostatic_rho, pi_formula,\
 import numpy as np
 from pyop2.profiling import timed_stage
 
+import warnings
+warnings.simplefilter("error")
+warnings.simplefilter("ignore", DeprecationWarning)
+
 import argparse
 parser = argparse.ArgumentParser(description='Straka testcase.')
 parser.add_argument('--nlayers', type=int, default=10, help='Number of layers, default 10.')
@@ -81,10 +85,10 @@ x, z = fd.SpatialCoordinate(mesh)
 Tsurf = fd.Constant(300., domain=mesh)
 thetab = Tsurf
 
-cp = fd.Constant(1004.5)  # SHC of dry air at const. pressure (J/kg/K)
+cp = fd.Constant(1004.5, domain=mesh)  # SHC of dry air at const. pressure (J/kg/K)
 Up = fd.as_vector([fd.Constant(0.0, domain=mesh), fd.Constant(1.0, domain=mesh)]) # up direction
 
-un, rhon, thetan = Un.split()
+un, rhon, thetan = Un.subfunctions
 thetan.interpolate(thetab)
 theta_back = fd.Function(Vt).assign(thetan)
 rhon.assign(1.0e-5)
@@ -154,7 +158,7 @@ nsolver = fd.NonlinearVariationalSolver(nprob, solver_parameters=sparameters,
                                         options_prefix="nsolver")
     
 file_gw = fd.File(name+'.pvd')
-un, rhon, thetan = Un.split()
+un, rhon, thetan = Un.subfunctions
 delta_theta = fd.Function(Vt, name="delta theta").assign(thetan-theta_back)
 delta_rho = fd.Function(V2, name="delta rho").assign(rhon-rho_back)
 

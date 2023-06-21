@@ -4,7 +4,7 @@ from firedrake import op2
 from petsc4py import PETSc
 
 def maximum(f):
-    fmax = op2.Global(1, [-1e50], dtype=float)
+    fmax = op2.Global(1, [-1e50], dtype=float, comm=fd.COMM_WORLD)
     op2.par_loop(op2.Kernel("""
 static void maxify(double *a, double *b) {
     a[0] = a[0] < b[0] ? b[0] : a[0];
@@ -13,7 +13,7 @@ static void maxify(double *a, double *b) {
     return fmax.data[0]
 
 def minimum(f):
-    fmin = op2.Global(1, [1e50], dtype=float)
+    fmin = op2.Global(1, [1e50], dtype=float, comm=fd.COMM_WORLD)
     op2.par_loop(op2.Kernel("""
 static void minify(double *a, double *b) {
     a[0] = a[0] > b[0] ? b[0] : a[0];
@@ -50,10 +50,10 @@ def hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary,
     else:
         bmeasure = fd.ds_b
         bstring = "top"
-        
+
     zeros = []
     for i in range(Up.ufl_shape[0]):
-        zeros.append(fd.Constant(0.))
+        zeros.append(fd.Constant(0., domain=mesh))
         
     L = -cp*fd.inner(dv, n)*thetan*pi_boundary*bmeasure
     L -= g*fd.inner(dv, Up)*fd.dx
@@ -64,6 +64,8 @@ def hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary,
     lu_params = {
         'snes_monitor': None,
         'snes_stol': 1.0e-50,
+        'snes_rtol': 1.0e-6,
+        'snes_atol': 1.0e-6,
         'ksp_monitor': None,
         'snes_converged_reason': None,
         'mat_type': 'aij',
@@ -75,14 +77,14 @@ def hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary,
                                           solver_parameters=lu_params,
                                           options_prefix="pisolver")
     PiSolver.solve()
-    v, Pi0 = wh.split()
+    v, Pi0 = wh.subfunctions
     if Pi:
         Pi.assign(Pi0)
     PETSc.Sys.Print("pi",maximum(Pi0))
     if rhon:
         rhon.interpolate(rho_formula(Pi0, thetan, R_d, p_0, kappa))
         PETSc.Sys.Print(maximum(rhon), minimum(rhon))
-        v,  rho = wh.split()
+        v,  rho = wh.subfunctions
         rho.assign(rhon)
         v, rho = fd.split(wh)
 
@@ -104,7 +106,7 @@ def hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary,
 
         zeros = []
         for i in range(Up.ufl_shape[0]):
-            zeros.append(fd.Constant(0.))
+            zeros.append(fd.Constant(0., domain=mesh))
 
         rhoeqn += cp*fd.inner(dv, n)*thetan*pi_boundary*bmeasure
         rhoeqn += g*fd.inner(dv, Up)*fd.dx
@@ -117,7 +119,7 @@ def hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary,
                                                   options_prefix="rhosolver")
 
         RhoSolver.solve()
-        v, Rho0 = wh.split()
+        v, Rho0 = wh.subfunctions
         rhon.assign(Rho0)
 
 def theta_tendency(q, u, theta, n, Up, c_pen):
@@ -251,8 +253,8 @@ def u_tendency(w, n, u, theta, rho,
     Written in a dimension agnostic way
     """
     Pi = pi_formula(rho, theta, R_d, p_0, kappa)
-    
-    K = fd.Constant(0.5)*fd.inner(u, u)
+    mesh = u.ufl_domain()
+    K = fd.Constant(0.5, domain=mesh)*fd.inner(u, u)
     Upwind = 0.5*(fd.sign(fd.dot(u, n))+1)
 
     eqn = (
@@ -288,8 +290,10 @@ def get_form_function(n, Up, c_pen,
         return eqn
     return form_function
 
-def form_viscosity(u, v, kappa, mu = fd.Constant(10.0)):
+def form_viscosity(u, v, kappa, mu = None):
     mesh = v.ufl_domain()
+    if not mu:
+        mu = fd.Constant(10.0, domain=mesh)
     n = fd.FacetNormal(mesh)
     a = fd.inner(fd.grad(u), fd.grad(v))*fd.dx
     h = fd.avg(fd.CellVolume(mesh))/fd.FacetArea(mesh)
@@ -312,12 +316,12 @@ def slice_imr_form(un, unp1, rhon, rhonp1, thetan, thetanp1,
     form_mass = get_form_mass()
     form_function = get_form_function(n, Up, c_pen,
                                       cp, g, R_d, p_0, kappa, mu, f, F)
-
+    mesh = un.ufl_domain()
     eqn = form_mass(unp1, rhonp1, thetanp1, du, drho, dtheta)
     eqn -= form_mass(un, rhon, thetan, du, drho, dtheta)
-    unph = fd.Constant(0.5)*(un + unp1)
-    rhonph = fd.Constant(0.5)*(rhon + rhonp1)
-    thetanph = fd.Constant(0.5)*(thetan + thetanp1)
+    unph = fd.Constant(0.5, domain=mesh)*(un + unp1)
+    rhonph = fd.Constant(0.5, domain=mesh)*(rhon + rhonp1)
+    thetanph = fd.Constant(0.5, domain=mesh)*(thetan + thetanp1)
     eqn += dT*form_function(unph, rhonph, thetanph,
                             du, drho, dtheta)
 
