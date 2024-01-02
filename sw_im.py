@@ -510,7 +510,8 @@ while t < tmax + 0.5*dt:
     t += dt
     tdump += dt
 
-    nsolver.solve()
+    with PETSc.Lgo.Event("nsolver"):
+        nsolver.solve()
     Un.assign(Unp1)
     
     if tdump > dumpt - dt*0.5:
