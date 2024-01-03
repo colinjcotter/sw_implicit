@@ -315,4 +315,4 @@ while t < tmax + 0.5*dt:
     stepcount += 1
     itcount += nsolver.snes.getLinearSolveIterations()
 PETSc.Sys.Print("Iterations", itcount, "its per step", itcount/stepcount,
-                "dt", dt, "tlblock", args.tlblock, "ref_level", args.ref_level, "dmax", args.dmax)
+                "dt", dt, "ref_level", args.ref_level, "dmax", args.dmax)
