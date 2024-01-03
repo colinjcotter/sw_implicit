@@ -231,7 +231,8 @@ sparameters = {
     "snes_ksp_ew": None, 
     "ksp_type": "gmres",
     "ksp_rtol": 1e-8,
-    "ksp_monitor": None,
+    "snes_monitor": None,
+    "ksp_converged_reason": None,
     "pc_type": "fieldsplit",
     "pc_fieldsplit_type": "schur",
     "pc_fieldsplit_schur_fact_type": "full",
@@ -273,7 +274,7 @@ minarg = fd.min_value(pow(rl, 2),
 bexpr = 2000.0*(1 - fd.sqrt(minarg)/rl)
 b.interpolate(bexpr)
 
-u0, h0 = Un.split()
+u0, h0 = Un.subfunctions
 u0.assign(un)
 h0.assign(etan + H - b)
 
