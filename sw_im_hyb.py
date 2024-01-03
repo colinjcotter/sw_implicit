@@ -166,14 +166,15 @@ class ApproxHybridPC(fd.PCBase):
         
         #input and output functions
         self.xfstar = fd.Cofunction(V2.dual())
-
+        self.xf = fd.Function(V2) # result of riesz map of the above
         self.yf = fd.Function(V2) # the preconditioned residual
 
         # hybridised system
-        u, p, ll = fd.TrialFunctions(Wtr)
         v, q, dll = fd.TestFunctions(Wtr)
         w0 = fd.Function(Wtr)
-        _, self.p0, _ = fd.split(w0)
+        u, p, ll = fd.split(w0)
+        _, self.p0, _ = w0.subfunctions
+        wfstar = fd.Cofunction(Wtr.dual())
 
         n = fd.FacetNormal(mesh)
         eqn = (
@@ -184,9 +185,12 @@ class ApproxHybridPC(fd.PCBase):
 
         # trace bits
         eqn += (
-            fd.jump(v, n)*ll + fd.jump(u, n)*dll
+            fd.jump(v, n)*ll("+")
+            + fd.jump(u, n)*dll("+")
         )*fd.dS
 
+        eqn -= q*self.xf*dx
+        
         condensed_params = {'ksp_type':'preonly',
                             'pc_type':'lu',
                             'pc_factor_mat_solver_type':'mumps'}
@@ -200,8 +204,8 @@ class ApproxHybridPC(fd.PCBase):
             'condensed_field':condensed_params
         }
 
-        prob = fd.LinearVariationalProblem(eqn, self.xfstar, w0)
-        self.solver = fd.LinearVariationalSolver(
+        prob = fd.NonlinearVariationalProblem(eqn, w0)
+        self.solver = fd.NonlinearVariationalSolver(
             prob, solver_parameters=hbps)
         
     def update(self, pc):
@@ -214,7 +218,7 @@ class ApproxHybridPC(fd.PCBase):
         # copy petsc vec into Function
         with self.xfstar.dat.vec_wo as v:
             x.copy(v)
-        
+        self.xf.assign(self.xfstar.riesz_representation())
         self.solver.solve()
         self.yf.assign(self.p0)
 
@@ -224,7 +228,6 @@ class ApproxHybridPC(fd.PCBase):
 
 sparameters = {
     "ksp_view": None,
-    "ksp_max_it": 3,
     "ksp_type": "gmres",
     "ksp_rtol": 1e-8,
     "ksp_monitor": None,

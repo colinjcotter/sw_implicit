@@ -4,7 +4,9 @@ from petsc4py import PETSc
 PETSc.Sys.popErrorHandler()
 import mg
 import argparse
-from irksome import Dt, RadauIIA, TimeStepper
+from irksome import Dt, RadauIIA, GaussLegendre, LobattoIIIA, LobattoIIIC, TimeStepper, Alexander
+from irksome.ButcherTableaux import ButcherTableau
+import numpy as np
 
 parser = argparse.ArgumentParser(description='Williamson 5 testcase for augmented Lagrangian solver.')
 parser.add_argument('--base_level', type=int, default=1, help='Base refinement level of icosahedral grid for MG solve. Default 1.')
@@ -183,10 +185,26 @@ u0, h0 = Un.split()
 u0.assign(un)
 h0.assign(etan + H - b)
 
-butcher_tableau = RadauIIA(2)
+class TRBDF2(ButcherTableau):
+    def __init__(self, gamma=2-2**0.5):
+        A = np.array(
+            [[0.,0.,0.],
+             [gamma/2, gamma/2, 0.],
+             [1/2/(2-gamma), 1/2/(2-gamma), (1-gamma)/(2-gamma)]])
+        b = A[-1,:]
+        c = np.array([0,gamma,1])
+        super(TRBDF2, self).__init__(A, b, None, c, 2)
+
+#butcher_tableau = TRBDF2()
+#butcher_tableau = LobattoIIIC(2)
+#butcher_tableau = Alexander()
+butcher_tableau = GaussLegendre(2)
+
 params = {
+    'snes_monitor': None,
     'ksp_type':'preonly',
     'pc_type':'lu',
+    'ksp_converged_reason': None,
     "pc_factor_mat_solver_type":'mumps'
 }
 
@@ -197,10 +215,11 @@ mgparams = {
     "ksp_type": "fgmres",
     #"ksp_monitor_true_residual": None,
     "ksp_converged_reason": None,
-    "ksp_atol": 1e-50,
-    "ksp_rtol": 1e-6,
+    #"snes_ksp_ew": None,
+    "ksp_atol": 1.0e-50,
+    "ksp_rtol": 1.0e-6,
     "ksp_max_it": 20,
-    "pc_type": "mg",
+    #"pc_type": "mg",
     "pc_mg_cycle_type": "v",
     "pc_mg_type": "multiplicative",
     "mg_levels_ksp_type": "gmres",
@@ -226,6 +245,8 @@ mgparams = {
 }
 
 stepper = TimeStepper(eqn, butcher_tableau, t, dt, Un,
+                      #stage_type='dirk',
+                      #bc_type="ODE",
                       solver_parameters=mgparams)
 
 dmax = args.dmax
