@@ -172,7 +172,7 @@ class ApproxHybridPC(fd.PCBase):
         # hybridised system
         v, q, dll = fd.TestFunctions(Wtr)
         w0 = fd.Function(Wtr)
-        u, p, ll = fd.split(w0)
+        u, p, ll = fd.TrialFunctions(Wtr)
         _, self.p0, _ = w0.subfunctions
         wfstar = fd.Cofunction(Wtr.dual())
 
@@ -185,7 +185,7 @@ class ApproxHybridPC(fd.PCBase):
 
         # trace bits
         eqn += (
-            fd.jump(v, n)*ll("+")
+            0.5*g*dT*fd.jump(v, n)*ll("+")
             + fd.jump(u, n)*dll("+")
         )*fd.dS
 
@@ -193,7 +193,7 @@ class ApproxHybridPC(fd.PCBase):
         
         condensed_params = {'ksp_type':'preonly',
                             'pc_type':'lu',
-                            'pc_factor_mat_solver_type':'mumps'}
+                            "pc_factor_mat_solver_type": "mumps"}
 
         hbps = {
             "mat_type": "matfree",
@@ -204,8 +204,9 @@ class ApproxHybridPC(fd.PCBase):
             'condensed_field':condensed_params
         }
 
-        prob = fd.NonlinearVariationalProblem(eqn, w0)
-        self.solver = fd.NonlinearVariationalSolver(
+        prob = fd.LinearVariationalProblem(fd.lhs(eqn), fd.rhs(eqn), w0,
+                                           constant_jacobian=True)
+        self.solver = fd.LinearVariationalSolver(
             prob, solver_parameters=hbps)
         
     def update(self, pc):
@@ -227,7 +228,7 @@ class ApproxHybridPC(fd.PCBase):
             v.copy(y)
 
 sparameters = {
-    "ksp_view": None,
+    "snes_ksp_ew": None, 
     "ksp_type": "gmres",
     "ksp_rtol": 1e-8,
     "ksp_monitor": None,
@@ -236,6 +237,7 @@ sparameters = {
     "pc_fieldsplit_schur_fact_type": "full",
     "fieldsplit_0_ksp_type": "preonly",
     "fieldsplit_0_pc_type": "lu",
+    "fieldsplit_0_pc_factor_mat_solver_type": "mumps",
     "fieldsplit_1_ksp_type": "preonly",
     "fieldsplit_1_pc_type": "python",
     "fieldsplit_1_pc_python_type": __name__+ ".ApproxHybridPC",
