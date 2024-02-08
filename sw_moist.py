@@ -151,6 +151,11 @@ qrh = 0.5*(qr0 + qr1)
 # u0, D0, buoy0, qv0, qc0, qr0 = fd.split(Un)
 # u1, D1, buoy1, qv1, qc1, qr1  = fd.split(Unp1)
 
+q0 = fd.Constant(135)
+qsat = q0/g/(Dh + b)*fd.exp(20*(1-buoyh/g))
+L = fd.Constant(10)
+gamma_r = fd.Constant(1.0e-3)
+gamma_v = 1/(1 + L*(20*q0/g/(Dh + b))*fd.exp(20*(1-buoyh/g)))
 
 def del_qv(qv):
     return MaxValue(0, gamma_v*(qv - qsat))/dT
