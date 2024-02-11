@@ -9,7 +9,7 @@ parser.add_argument('--base_level', type=int, default=1, help='Base refinement l
 parser.add_argument('--ref_level', type=int, default=5, help='Refinement level of icosahedral grid. Default 5.')
 parser.add_argument('--dmax', type=float, default=15, help='Final time in days. Default 15.')
 parser.add_argument('--dumpt', type=float, default=24, help='Dump time in hours. Default 24.')
-parser.add_argument('--dt', type=float, default=0.1, help='Timestep in hours. Default XXX')
+parser.add_argument('--dt', type=float, default=1, help='Timestep in hours. Default XXX')
 parser.add_argument('--filename', type=str, default='w5moist')
 parser.add_argument('--coords_degree', type=int, default=1, help='Degree of polynomials for sphere mesh approximation.')
 parser.add_argument('--degree', type=int, default=1, help='Degree of finite element space (the DG space).')
@@ -123,8 +123,8 @@ def u_op(v, u, D, buoy):
         # -<div(Dv), b/2> + <<jump(Dv, n), {b/2} >>
         - fd.div(buoy*v)*(D+b)*dx
         + fd.jump(buoy*v, n)*fd.avg(D+b)*dS
-        + fd.div(D*v)*b/2*dx
-        - fd.jump(D*v, n)*fd.avg(b/2)*dS
+        + fd.div(D*v)*buoy/2*dx
+        - fd.jump(D*v, n)*fd.avg(buoy/2)*dS
     )
 
 def h_op(phi, u, h):
@@ -235,7 +235,7 @@ sparameters = {
     "mg_coarse_assembled_pc_type": "lu",
     "mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
 }
-  
+
 dt = 60*60*args.dt
 dT.assign(dt)
 t = 0.
@@ -343,7 +343,7 @@ while t < tmax + 0.5*dt:
     Un.assign(Unp1)
     
     if tdump > dumpt - dt*0.5:
-        etan.assign(h0 - H + b)
+        etan.assign(D0 - H + b)
         un.assign(u0)
         qsolver.solve()
         qvn.interpolate(qv0)
