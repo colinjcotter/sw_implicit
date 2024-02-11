@@ -156,6 +156,7 @@ qsat = q0/g/(Dh + b)*fd.exp(20*(1-buoyh/g))
 L = fd.Constant(10)
 gamma_r = fd.Constant(1.0e-3)
 gamma_v = 1/(1 + L*(20*q0/g/(Dh + b))*fd.exp(20*(1-buoyh/g)))
+q_precip = fd.Constant(1.0e-4)
 
 def del_qv(qv):
     return MaxValue(0, gamma_v*(qv - qsat))/dT
@@ -269,21 +270,52 @@ etan = fd.Function(V2, name="Elevation").project(eta_expr)
 
 # Topography.
 rl = fd.pi/9.0
-lambda_x = fd.atan_2(x[1]/R0, x[0]/R0)
+lambda_x = fd.atan_2(x[1]/R0, x[0]/R0) #  longitude
 lambda_c = -fd.pi/2.0
-phi_x = fd.asin(x[2]/R0)
+phi_x = fd.asin(x[2]/R0) #  latitude
 phi_c = fd.pi/6.0
 minarg = fd.min_value(pow(rl, 2),
                 pow(phi_x - phi_c, 2) + pow(lambda_x - lambda_c, 2))
 bexpr = 2000.0*(1 - fd.sqrt(minarg)/rl)
 b.interpolate(bexpr)
 
-u0, h0 = Un.split()
+u0, D0, bouy0, qv0, qc0, qr0 = U0.subfunctions
 u0.assign(un)
-h0.assign(etan + H - b)
+D0.assign(etan + H - b)
+
+# The below is from Nell Hartney
+# expression for initial buoyancy - note the bracket around 1-mu
+F = (2/(pi**2))*(phi_x*(phi_x-pi/2)*SP -
+                 2*(phi_x+pi/2)*(phi_x-pi/2)*(1-mu1)*EQ
+                 + phi_x*(phi_x+pi/2)*NP)
+theta_expr = F + mu1*EQ*cos(phi_x)*sin(lambda_x)
+buoyexpr = g * (1 - theta_expr)
+bouy0.interpolate(bouyexpr)
+
+# The below is from Nell Hartney
+# expression for initial water vapour depends on initial saturation
+initial_msat = q0/(g*D0 + g*tpexpr) * exp(20*theta_expr)
+vexpr = mu2 * initial_msat
+qv.interpolate(vexpr)
+# cloud and rain initially zero
 
 q = fd.TrialFunction(V0)
 p = fd.TestFunction(V0)
+
+eps = Constant(1.0/300)
+theta_EQ = 30*eps
+theta_SP = -40*eps
+theta_NP = -20*eps
+mu1 = fd.Constant(0.05)
+mu2 = fd.Constant(0.98)
+
+def ma_F(f1, f2, f3, phi):
+    return phi*(phi - fd.pi/2)*f1 - \
+        2*(phi + fd.pi/2)*(phi - fd/pi/2)*f2 + \
+        phi*(phi + fd.pi/2)*f3
+
+Phi00 = fd.Constant(
+Phi0 = 
 
 qn = fd.Function(V0, name="Relative Vorticity")
 veqn = q*p*dx + fd.inner(perp(fd.grad(p)), un)*dx
