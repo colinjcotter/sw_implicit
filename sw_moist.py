@@ -9,7 +9,7 @@ parser.add_argument('--base_level', type=int, default=1, help='Base refinement l
 parser.add_argument('--ref_level', type=int, default=5, help='Refinement level of icosahedral grid. Default 5.')
 parser.add_argument('--dmax', type=float, default=15, help='Final time in days. Default 15.')
 parser.add_argument('--dumpt', type=float, default=24, help='Dump time in hours. Default 24.')
-parser.add_argument('--dt', type=float, default=1, help='Timestep in hours. Default 1.')
+parser.add_argument('--dt', type=float, default=0.1, help='Timestep in hours. Default XXX')
 parser.add_argument('--filename', type=str, default='w5moist')
 parser.add_argument('--coords_degree', type=int, default=1, help='Degree of polynomials for sphere mesh approximation.')
 parser.add_argument('--degree', type=int, default=1, help='Degree of finite element space (the DG space).')
@@ -122,7 +122,7 @@ def u_op(v, u, D, buoy):
         # -<div(bv), (D+B)> + << jump(vb, n), {D+B} >>
         # -<div(Dv), b/2> + <<jump(Dv, n), {b/2} >>
         - fd.div(buoy*v)*(D+b)*dx
-        - fd.jump(buoy*v, n)*fd.avg(D+b)*dS
+        + fd.jump(buoy*v, n)*fd.avg(D+b)*dS
         + fd.div(D*v)*b/2*dx
         - fd.jump(D*v, n)*fd.avg(b/2)*dS
     )
@@ -141,7 +141,7 @@ def q_op(phi, u, q):
 
 "implicit midpoint rule"
 uh = 0.5*(u0 + u1)
-DD = 0.5*(D0 + D1)
+Dh = 0.5*(D0 + D1)
 buoyh = 0.5*(buoy0 + buoy1)
 qvh = 0.5*(qv0 + qv1)
 qch = 0.5*(qc0 + qc1)
@@ -158,32 +158,35 @@ gamma_r = fd.Constant(1.0e-3)
 gamma_v = 1/(1 + L*(20*q0/g/(Dh + b))*fd.exp(20*(1-buoyh/g)))
 q_precip = fd.Constant(1.0e-4)
 
+dx0 = dx('everywhere', metadata = {'quadrature_degree': 6,
+                                   'representation': 'quadrature'})
+
 def del_qv(qv):
-    return MaxValue(0, gamma_v*(qv - qsat))/dT
+    return fd.max_value(0, gamma_v*(qv - qsat))/dT
 
 def del_qc(qc, qv):
-    return MinValue(qc, MaxValue(0, gamma_v*(qsat - qv)))/dT
+    return fd.min_value(qc, fd.max_value(0, gamma_v*(qsat - qv)))/dT
 
 def del_qr(qc):
-    return MaxValue(0, gamma_r*(qc - q_precip))/dT
+    return fd.max_value(0, gamma_r*(qc - q_precip))/dT
 
 eqn = (
     fd.inner(du, u1 - u0)*dx
-    + dT*u_op(du, uh, DD)
+    + dT*u_op(du, uh, Dh, buoyh)
     + dD*(D1 - D0)*dx
-    + dT*h_op(dD, uh, DD)
+    + dT*h_op(dD, uh, Dh)
     + dbuoy*(buoy1 - buoy0)*dx
-    + dT*q_op(dbuoy, uh, buoyh)*dx
-    - dT*g*L*dbuoy*(del_qv(qvh) - del_qc(qch, qvh))*dx #  bouyancy source
+    + dT*q_op(dbuoy, uh, buoyh)
+    - dT*g*L*dbuoy*(del_qv(qvh) - del_qc(qch, qvh))*dx0 #  buoyancy source
     + dqv*(qv1 - qv0)*dx
-    + dT*q_op(dqv, uh, qvh)*dx
-    - dT*dqv*(del_qc(qch, qvh) - del_qv(qvh))*dx #  qv source
+    + dT*q_op(dqv, uh, qvh)
+    - dT*dqv*(del_qc(qch, qvh) - del_qv(qvh))*dx0 #  qv source
     + dqc*(qc1 - qc0)*dx
-    + dT*q_op(dqc, uh, qch)*dx
-    - dT*dqc*(del_qv(qvh) - del_qc(qch, qvh) - del_qr(qch))*dx #  qc source
+    + dT*q_op(dqc, uh, qch)
+    - dT*dqc*(del_qv(qvh) - del_qc(qch, qvh) - del_qr(qch))*dx0 #  qc source
     + dqr*(qr1 - qr0)*dx
-    + dT*q_op(dqr, uh, qrh)*dx
-    - dT*dqr*del_qr(qch)*dx #  qr source
+    + dT*q_op(dqr, uh, qrh)
+    - dT*dqr*del_qr(qch)*dx0 #  qr source
 )
     
 # U_t + N(U) = 0
@@ -232,16 +235,14 @@ sparameters = {
     "mg_coarse_assembled_pc_type": "lu",
     "mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
 }
-    
+  
 dt = 60*60*args.dt
 dT.assign(dt)
 t = 0.
 
 nprob = fd.NonlinearVariationalProblem(eqn, Unp1)
-ctx = {"mu": gamma*2/g/dt}
 nsolver = fd.NonlinearVariationalSolver(nprob,
-                                        solver_parameters=sparameters,
-                                        appctx=ctx)
+                                        solver_parameters=sparameters)
 vtransfer = mg.ManifoldTransfer()
 tm = fd.TransferManager()
 transfers = {
@@ -270,7 +271,7 @@ etan = fd.Function(V2, name="Elevation").project(eta_expr)
 
 # Topography.
 rl = fd.pi/9.0
-lambda_x = fd.atan_2(x[1]/R0, x[0]/R0) #  longitude
+lambda_x = fd.atan2(x[1]/R0, x[0]/R0) #  longitude
 lambda_c = -fd.pi/2.0
 phi_x = fd.asin(x[2]/R0) #  latitude
 phi_c = fd.pi/6.0
@@ -279,43 +280,35 @@ minarg = fd.min_value(pow(rl, 2),
 bexpr = 2000.0*(1 - fd.sqrt(minarg)/rl)
 b.interpolate(bexpr)
 
-u0, D0, bouy0, qv0, qc0, qr0 = U0.subfunctions
+u0, D0, buoy0, qv0, qc0, qr0n = Un.subfunctions
 u0.assign(un)
 D0.assign(etan + H - b)
 
+eps = fd.Constant(1.0/300)
+EQ = 30*eps
+SP = -40*eps
+NP = -20*eps
+mu1 = fd.Constant(0.05)
+mu2 = fd.Constant(0.98)
+
 # The below is from Nell Hartney
 # expression for initial buoyancy - note the bracket around 1-mu
-F = (2/(pi**2))*(phi_x*(phi_x-pi/2)*SP -
-                 2*(phi_x+pi/2)*(phi_x-pi/2)*(1-mu1)*EQ
-                 + phi_x*(phi_x+pi/2)*NP)
-theta_expr = F + mu1*EQ*cos(phi_x)*sin(lambda_x)
+F = (2/(fd.pi**2))*(phi_x*(phi_x-fd.pi/2)*SP -
+                 2*(phi_x+fd.pi/2)*(phi_x-fd.pi/2)*(1-mu1)*EQ
+                 + phi_x*(phi_x+fd.pi/2)*NP)
+theta_expr = F + mu1*EQ*fd.cos(phi_x)*fd.sin(lambda_x)
 buoyexpr = g * (1 - theta_expr)
-bouy0.interpolate(bouyexpr)
+buoy0.interpolate(buoyexpr)
 
 # The below is from Nell Hartney
 # expression for initial water vapour depends on initial saturation
-initial_msat = q0/(g*D0 + g*tpexpr) * exp(20*theta_expr)
+initial_msat = q0/(g*D0 + g*bexpr) * fd.exp(20*theta_expr)
 vexpr = mu2 * initial_msat
-qv.interpolate(vexpr)
+qv0.interpolate(vexpr)
 # cloud and rain initially zero
 
 q = fd.TrialFunction(V0)
 p = fd.TestFunction(V0)
-
-eps = Constant(1.0/300)
-theta_EQ = 30*eps
-theta_SP = -40*eps
-theta_NP = -20*eps
-mu1 = fd.Constant(0.05)
-mu2 = fd.Constant(0.98)
-
-def ma_F(f1, f2, f3, phi):
-    return phi*(phi - fd.pi/2)*f1 - \
-        2*(phi + fd.pi/2)*(phi - fd/pi/2)*f2 + \
-        phi*(phi + fd.pi/2)*f3
-
-Phi00 = fd.Constant(
-Phi0 = 
 
 qn = fd.Function(V0, name="Relative Vorticity")
 veqn = q*p*dx + fd.inner(perp(fd.grad(p)), un)*dx
@@ -325,10 +318,16 @@ qsolver = fd.LinearVariationalSolver(vprob,
                                      solver_parameters=qparams)
 
 file_sw = fd.File(name+'.pvd')
-etan.assign(h0 - H + b)
+etan.assign(D0 - H + b)
 un.assign(u0)
 qsolver.solve()
-file_sw.write(un, etan, qn)
+qvn = fd.Function(V2)
+qcn = fd.Function(V2)
+qrn = fd.Function(V2)
+qvn.interpolate(qv0)
+qcn.interpolate(qc0)
+qrn.interpolate(qr0)
+file_sw.write(un, etan, qn, qvn, qcn, qrn)
 Unp1.assign(Un)
 
 PETSc.Sys.Print('tmax', tmax, 'dt', dt)
@@ -339,7 +338,7 @@ while t < tmax + 0.5*dt:
     t += dt
     tdump += dt
 
-    with PETSc.Lgo.Event("nsolver"):
+    with PETSc.Log.Event("nsolver"):
         nsolver.solve()
     Un.assign(Unp1)
     
@@ -347,7 +346,10 @@ while t < tmax + 0.5*dt:
         etan.assign(h0 - H + b)
         un.assign(u0)
         qsolver.solve()
-        file_sw.write(un, etan, qn)
+        qvn.interpolate(qv0)
+        qcn.interpolate(qc0)
+        qrn.interpolate(qr0)
+        file_sw.write(un, etan, qn, qvn, qcn, qrn)
         tdump -= dumpt
     stepcount += 1
     itcount += nsolver.snes.getLinearSolveIterations()
