@@ -135,7 +135,7 @@ def h_op(phi, u, h):
 
 def q_op(phi, u, q):
     uup = 0.5 * (fd.dot(u, n) + abs(fd.dot(u, n)))
-    return (- fd.inner(fd.grad(phi*q), u)*dx
+    return (- fd.inner(fd.div(phi*u), q)*dx
             + fd.jump(phi)*(uup('+')*q('+')
                             - uup('-')*q('-'))*dS)
 
