@@ -37,7 +37,7 @@ def high_order_mesh_hierarchy(mh, degree, R0):
     meshes = []
     for m in mh:
         X = fd.VectorFunctionSpace(m, "Lagrange", degree)
-        new_coords = fd.interpolate(m.coordinates, X)
+        new_coords = fd.Function(X).interpolate(m.coordinates)
         x, y, z = new_coords
         r = (x**2 + y**2 + z**2)**0.5
         new_coords.interpolate(R0*new_coords/r)
@@ -177,7 +177,7 @@ eqn = (
     + dT*h_op(dD, uh, Dh)
     + dbuoy*(buoy1 - buoy0)*dx
     + dT*q_op(dbuoy, uh, buoyh)
-    - dT*g*L*dbuoy*(del_qv(qvh) - del_qc(qch, qvh))*dx0 #  buoyancy source
+    + dT*g*L*dbuoy*(del_qv(qvh) - del_qc(qch, qvh))*dx0 #  buoyancy source
     + dqv*(qv1 - qv0)*dx
     + dT*q_op(dqv, uh, qvh)
     - dT*dqv*(del_qc(qch, qvh) - del_qv(qvh))*dx0 #  qv source
@@ -206,7 +206,7 @@ sparameters = {
     "snes_monitor": None,
     "mat_type": "matfree",
     "ksp_type": "fgmres",
-    "ksp_monitor_true_residual": None,
+    #"ksp_monitor_true_residual": None,
     "ksp_converged_reason": None,
     "ksp_atol": 1e-8,
     "ksp_rtol": 1e-8,
@@ -216,7 +216,7 @@ sparameters = {
     "pc_mg_type": "multiplicative",
     "mg_levels_ksp_type": "gmres",
     "mg_levels_ksp_max_it": 3,
-    #"mg_levels_ksp_convergence_test": "skip",
+    "mg_levels_ksp_convergence_test": "skip",
     "mg_levels_pc_type": "python",
     "mg_levels_pc_python_type": "firedrake.PatchPC",
     "mg_levels_patch_pc_patch_save_operators": True,
