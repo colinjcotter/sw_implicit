@@ -123,8 +123,8 @@ def u_op(v, u, D, buoy):
         # -<div(Dv), b/2> + <<jump(Dv, n), {b/2} >>
         - fd.div(buoy*v)*(D+b)*dx
         + fd.jump(buoy*v, n)*fd.avg(D+b)*dS
-        + fd.div(D*v)*buoy/2*dx
-        - fd.jump(D*v, n)*fd.avg(buoy/2)*dS
+        - fd.div(D*v)*buoy/2*dx
+        + fd.jump(D*v, n)*fd.avg(buoy/2)*dS
     )
 
 def h_op(phi, u, h):
@@ -354,4 +354,4 @@ while t < tmax + 0.5*dt:
     stepcount += 1
     itcount += nsolver.snes.getLinearSolveIterations()
 PETSc.Sys.Print("Iterations", itcount, "its per step", itcount/stepcount,
-                "dt", dt, "tlblock", args.tlblock, "ref_level", args.ref_level, "dmax", args.dmax)
+                "dt", dt, "ref_level", args.ref_level, "dmax", args.dmax)
