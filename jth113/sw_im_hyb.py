@@ -34,31 +34,22 @@ mesh = fd.IcosahedralSphereMesh(radius=earth.radius,
                                 degree=args.coords_degree)
 x = fd.SpatialCoordinate(mesh)
 mesh.init_cell_orientations(x)
-outward_normals = fd.CellNormal(mesh)
 
+# function spaces
+W = swe.default_function_space(mesh, degree=args.degree)
+V1, V2 = W.subfunctions
+V0 = fd.FunctionSpace(mesh, "CG", args.degree+2)  # potential vorticity space
 
-def perp(u):
-    return fd.cross(outward_normals, u)
-
-
-degree = args.degree
-V1 = fd.FunctionSpace(mesh, "BDM", degree+1)
-V1_el = fd.FiniteElement("BDM", fd.triangle, degree+1)
-V1b_el = fd.BrokenElement(V1_el)
-V1b = fd.FunctionSpace(mesh, V1b_el)
-V2 = fd.FunctionSpace(mesh, "DG", degree)
-Tr = fd.FunctionSpace(mesh, "HDivT", degree+1)
-V0 = fd.FunctionSpace(mesh, "CG", degree+2)
-W = fd.MixedFunctionSpace((V1, V2))
+# Trace space for hybridisation
+V1b = fd.FunctionSpace(mesh, fd.BrokenElement(V1.ufl_element()))
+Tr = fd.FunctionSpace(mesh, "HDivT", args.degree+1)
 Wtr = V1b * V2 * Tr
+Wb = V1b * V2
 
-R0 = earth.Radius
 H = case5.H0
 f = case5.coriolis_expression(*x)  # Coriolis parameter
 g = earth.Gravity  # Gravitational constant
 b = case5.topography_expression(*x)
-
-# D = eta + b
 
 
 def form_mass(u, h, v, q):
@@ -76,9 +67,8 @@ def linear_form_function(u, h, v, q, t=None):
 Un = fd.Function(W)
 Un1 = fd.Function(W)
 
-dT = fd.Constant(0.)
-dS = fd.dS
-dx = fd.dx
+dt = units.hour*args.dt
+dT = fd.Constant(dt)
 
 u0s = fd.split(Un)
 u1s = fd.split(Un1)
@@ -93,16 +83,10 @@ eqn = (
     + half*dT*form_function(*u0s, *vs)
 )
 
-# solver options
-
-dt = units.hour*args.dt
-dT.assign(dt)
-t = 0.
-
 
 # PC forming approximate hybridisable system (without advection)
 # solve it using hybridisation and then return the DG part
-# (for use in a Schur compement setup)
+# (for use in a Schur complement setup)
 class ApproxHybridPC(fd.PCBase):
     def initialize(self, pc):
         if pc.getType() != "python":
@@ -129,15 +113,42 @@ class ApproxHybridPC(fd.PCBase):
         eqn += (
             0.5*g*dT*fd.jump(v, n)*ll("+")
             + fd.jump(u, n)*dll("+")
-        )*dS
+        )*fd.dS
 
         # the rhs
-        eqn -= q*self.xf*dx
+        eqn -= q*self.xf*fd.dx
 
-        condensed_params = {
+        factorisation_params = {
             'ksp_type': 'preonly',
-            'pc_type': 'lu',
-            "pc_factor_mat_solver_type": "mumps"
+            'pc_factor_mat_ordering_type': 'rcm',
+            'pc_factor_reuse_ordering': None,
+            'pc_factor_reuse_fill': None,
+        }
+
+        lu_params = {'pc_type': 'lu', 'pc_factor_mat_solver_type': 'mumps'}
+        lu_params.update(factorisation_params)
+
+        ilu_params = {'pc_type': 'ilu'}
+        ilu_params.update(factorisation_params)
+
+        gamg_params = {
+            # 'ksp_type': 'preonly',
+            "ksp_type": "fgmres",
+            "ksp_rtol": 1e-10,
+            "ksp_converged_reason": None,
+            'pc_type': 'gamg',
+            # 'pc_gamg_sym_graph': None,
+            'pc_mg_type': 'full',
+            'pc_mg_cycle_type': 'v',
+            'mg': {
+                'levels': {
+                    'ksp_type': 'gmres',
+                    'ksp_max_it': 5,
+                    'pc_type': 'bjacobi',
+                    'sub': ilu_params,
+                },
+                'coarse': lu_params
+            }
         }
 
         hbps = {
@@ -146,13 +157,93 @@ class ApproxHybridPC(fd.PCBase):
             "pc_type": "python",
             "pc_python_type": "firedrake.SCPC",
             'pc_sc_eliminate_fields': '0, 1',
-            'condensed_field': condensed_params
+            'condensed_field': lu_params
+            # "ksp_type": "gmres",
+            # "ksp_rtol": 1e-5,
+            # 'condensed_field': gamg_params
         }
 
         prob = fd.LinearVariationalProblem(fd.lhs(eqn), fd.rhs(eqn), w0,
                                            constant_jacobian=True)
         self.solver = fd.LinearVariationalSolver(
-            prob, solver_parameters=hbps)
+            prob, solver_parameters=hbps, options_prefix="hybr")
+
+    def update(self, pc):
+        pass
+
+    def applyTranspose(self, pc, x, y):
+        raise NotImplementedError
+
+    def apply(self, pc, x, y):
+        # copy petsc vec into Function
+        with self.xfstar.dat.vec_wo as v:
+            x.copy(v)
+        self.xf.assign(self.xfstar.riesz_representation())
+        self.solver.solve()
+        self.yf.assign(self.p0)
+
+        # copy petsc vec into Function
+        with self.yf.dat.vec_ro as v:
+            v.copy(y)
+
+
+# PC forming approximate schur complement (without advection)
+# of the broken system, which is block diagonal.
+# (for use in a Schur complement setup)
+class ApproxSchurPC(fd.PCBase):
+    def initialize(self, pc):
+        if pc.getType() != "python":
+            raise ValueError("Expecting PC type python")
+
+        # input and output functions
+        self.xfstar = fd.Cofunction(V2.dual())
+        self.xf = fd.Function(V2)  # result of riesz map of the above
+        self.yf = fd.Function(V2)  # the preconditioned residual
+
+        # hybridised system
+        v, q = fd.TestFunctions(Wb)
+        w0 = fd.Function(Wb)
+        u, p = fd.TrialFunctions(Wb)
+        _, self.p0 = w0.subfunctions
+
+        n = fd.FacetNormal(mesh)
+        eqn = (
+            form_mass(u, p, v, q)
+            + half*dT*linear_form_function(u, p, v, q)
+        )
+
+        # the rhs
+        eqn -= q*self.xf*fd.dx
+
+        factorisation_params = {
+            'ksp_type': 'preonly',
+            'pc_factor_mat_ordering_type': 'rcm',
+            'pc_factor_reuse_ordering': None,
+            'pc_factor_reuse_fill': None,
+        }
+
+        lu_params = {'pc_type': 'lu', 'pc_factor_mat_solver_type': 'mumps'}
+        lu_params.update(factorisation_params)
+
+        ilu_params = {'pc_type': 'ilu'}
+        ilu_params.update(factorisation_params)
+
+        schur_params = {
+            'ksp_type': 'preonly',
+            # 'ksp_monitor': None,
+            # 'ksp_converged_reason': None,
+            'pc_type': 'fieldsplit',
+            'pc_fieldsplit_type': 'schur',
+            'pc_fieldsplit_schur_fact_type': 'full',
+            'pc_fieldsplit_schur_precondition': 'full',
+            'fieldsplit': lu_params
+        }
+
+        prob = fd.LinearVariationalProblem(fd.lhs(eqn), fd.rhs(eqn), w0,
+                                           constant_jacobian=True)
+        self.solver = fd.LinearVariationalSolver(
+            prob, solver_parameters=schur_params,
+            options_prefix="schur")
 
     def update(self, pc):
         pass
@@ -181,9 +272,9 @@ sparameters = {
         "ksp_ew": None,
         "atol": atol,
     },
-    "ksp_type": "gmres",
+    "ksp_type": "fgmres",
     "ksp": {
-        # "monitor": None,
+        "monitor": None,
         "converged_reason": None,
     },
     "pc_type": "fieldsplit",
@@ -195,9 +286,12 @@ sparameters = {
         "pc_factor_mat_solver_type": "mumps",
     },
     "fieldsplit_1": {
-        "ksp_type": "preonly",
+        "ksp_type": "gmres",
+        # "ksp_monitor": None,
+        # "ksp_converged_reason": None,
+        "ksp_rtol": 1e-3,
         "pc_type": "python",
-        "pc_python_type": __name__ + ".ApproxHybridPC",
+        "pc_python_type": __name__ + ".ApproxSchurPC",
     }
 }
 
@@ -221,7 +315,7 @@ q = fd.TrialFunction(V0)
 p = fd.TestFunction(V0)
 
 qn = fd.Function(V0, name="Relative Vorticity")
-veqn = q*p*dx + fd.inner(fd.cross(fd.CellNormal(mesh), fd.grad(p)), un)*dx
+veqn = q*p*fd.dx + fd.inner(fd.cross(fd.CellNormal(mesh), fd.grad(p)), un)*fd.dx
 vprob = fd.LinearVariationalProblem(fd.lhs(veqn), fd.rhs(veqn), qn)
 qparams = {'ksp_type': 'cg'}
 qsolver = fd.LinearVariationalSolver(vprob,
@@ -237,6 +331,7 @@ Un1.assign(Un)
 PETSc.Sys.Print('tmax', tmax, 'dt', dt)
 itcount = 0
 stepcount = 0
+t = 0.
 while t < tmax + 0.5*dt:
     PETSc.Sys.Print("")
     PETSc.Sys.Print("=== --- === --- === --- === --- ===")
