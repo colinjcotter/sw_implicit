@@ -16,7 +16,10 @@ parser = argparse.ArgumentParser(
 parser.add_argument('--ref_level', type=int, default=3, help='Refinement level of icosahedral grid.')  # noqa: E501
 parser.add_argument('--dmax', type=float, default=15, help='Final time in days.')  # noqa: E501
 parser.add_argument('--dumpt', type=float, default=24, help='Dump time in hours.')  # noqa: E501
+parser.add_argument('--nt', type=int, default=4, help='Number of timesteps.')  # noqa: E501
 parser.add_argument('--dt', type=float, default=1, help='Timestep in hours.')  # noqa: E501
+parser.add_argument('--atol', type=float, default=1e4, help='Absolute residual for each timestep.')  # noqa: E501
+parser.add_argument('--schur_its', type=int, default=3, help='Number of ksp iterations on the schur complement.')  # noqa: E501
 parser.add_argument('--filename', type=str, default='w5hybr')  # noqa: E501
 parser.add_argument('--write_file', action='store_true', help='Write time series to vtk file.')  # noqa: E501
 parser.add_argument('--coords_degree', type=int, default=1, help='Degree of mesh coordinates.')  # noqa: E501
@@ -83,6 +86,17 @@ eqn = (
     + half*dT*form_function(*u0s, *vs)
 )
 
+factorisation_params = {
+    'ksp_type': 'preonly',
+    'pc_factor_mat_ordering_type': 'rcm',
+    'pc_factor_reuse_ordering': None,
+    'pc_factor_reuse_fill': None,
+}
+lu_params = {'pc_type': 'lu', 'pc_factor_mat_solver_type': 'mumps'}
+lu_params.update(factorisation_params)
+ilu_params = {'pc_type': 'ilu'}
+ilu_params.update(factorisation_params)
+
 
 # PC forming approximate hybridisable system (without advection)
 # solve it using hybridisation and then return the DG part
@@ -118,39 +132,6 @@ class ApproxHybridPC(fd.PCBase):
         # the rhs
         eqn -= q*self.xf*fd.dx
 
-        factorisation_params = {
-            'ksp_type': 'preonly',
-            'pc_factor_mat_ordering_type': 'rcm',
-            'pc_factor_reuse_ordering': None,
-            'pc_factor_reuse_fill': None,
-        }
-
-        lu_params = {'pc_type': 'lu', 'pc_factor_mat_solver_type': 'mumps'}
-        lu_params.update(factorisation_params)
-
-        ilu_params = {'pc_type': 'ilu'}
-        ilu_params.update(factorisation_params)
-
-        gamg_params = {
-            # 'ksp_type': 'preonly',
-            "ksp_type": "fgmres",
-            "ksp_rtol": 1e-10,
-            "ksp_converged_reason": None,
-            'pc_type': 'gamg',
-            # 'pc_gamg_sym_graph': None,
-            'pc_mg_type': 'full',
-            'pc_mg_cycle_type': 'v',
-            'mg': {
-                'levels': {
-                    'ksp_type': 'gmres',
-                    'ksp_max_it': 5,
-                    'pc_type': 'bjacobi',
-                    'sub': ilu_params,
-                },
-                'coarse': lu_params
-            }
-        }
-
         hbps = {
             "mat_type": "matfree",
             "ksp_type": "preonly",
@@ -158,9 +139,6 @@ class ApproxHybridPC(fd.PCBase):
             "pc_python_type": "firedrake.SCPC",
             'pc_sc_eliminate_fields': '0, 1',
             'condensed_field': lu_params
-            # "ksp_type": "gmres",
-            # "ksp_rtol": 1e-5,
-            # 'condensed_field': gamg_params
         }
 
         prob = fd.LinearVariationalProblem(fd.lhs(eqn), fd.rhs(eqn), w0,
@@ -200,10 +178,12 @@ class ApproxSchurPC(fd.PCBase):
         self.xf = fd.Function(V2)  # result of riesz map of the above
         self.yf = fd.Function(V2)  # the preconditioned residual
 
+        Wschur = W
+
         # hybridised system
-        v, q = fd.TestFunctions(Wb)
-        w0 = fd.Function(Wb)
-        u, p = fd.TrialFunctions(Wb)
+        v, q = fd.TestFunctions(Wschur)
+        w0 = fd.Function(Wschur)
+        u, p = fd.TrialFunctions(Wschur)
         _, self.p0 = w0.subfunctions
 
         n = fd.FacetNormal(mesh)
@@ -214,19 +194,6 @@ class ApproxSchurPC(fd.PCBase):
 
         # the rhs
         eqn -= q*self.xf*fd.dx
-
-        factorisation_params = {
-            'ksp_type': 'preonly',
-            'pc_factor_mat_ordering_type': 'rcm',
-            'pc_factor_reuse_ordering': None,
-            'pc_factor_reuse_fill': None,
-        }
-
-        lu_params = {'pc_type': 'lu', 'pc_factor_mat_solver_type': 'mumps'}
-        lu_params.update(factorisation_params)
-
-        ilu_params = {'pc_type': 'ilu'}
-        ilu_params.update(factorisation_params)
 
         schur_params = {
             'ksp_type': 'preonly',
@@ -264,34 +231,33 @@ class ApproxSchurPC(fd.PCBase):
             v.copy(y)
 
 
-atol = 1e4
 sparameters = {
     "snes": {
         "monitor": None,
         "converged_reason": None,
         "ksp_ew": None,
-        "atol": atol,
+        "atol": args.atol,
+        "rtol": 1e-100,
     },
     "ksp_type": "fgmres",
     "ksp": {
         "monitor": None,
-        "converged_reason": None,
+        "converged_rate": None,
+        "atol": args.atol,
     },
     "pc_type": "fieldsplit",
     "pc_fieldsplit_type": "schur",
     "pc_fieldsplit_schur_fact_type": "full",
-    "fieldsplit_0": {
-        "ksp_type": "preonly",
-        "pc_type": "lu",
-        "pc_factor_mat_solver_type": "mumps",
-    },
+    "fieldsplit_0": lu_params,
     "fieldsplit_1": {
         "ksp_type": "gmres",
         # "ksp_monitor": None,
-        # "ksp_converged_reason": None,
-        "ksp_rtol": 1e-3,
+        # "ksp_max_it": args.schur_its,
+        # "ksp_converged_maxits": None,
+        "ksp_converged_rate": None,
+        "ksp_rtol": 1e-2,
         "pc_type": "python",
-        "pc_python_type": __name__ + ".ApproxSchurPC",
+        "pc_python_type": __name__ + ".ApproxHybridPC",
     }
 }
 
@@ -332,7 +298,8 @@ PETSc.Sys.Print('tmax', tmax, 'dt', dt)
 itcount = 0
 stepcount = 0
 t = 0.
-while t < tmax + 0.5*dt:
+# while t < tmax + 0.5*dt:
+for i in range(args.nt):
     PETSc.Sys.Print("")
     PETSc.Sys.Print("=== --- === --- === --- === --- ===")
     PETSc.Sys.Print("")
