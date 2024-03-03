@@ -7,7 +7,7 @@ from utils.planets import earth
 from utils import shallow_water as swe
 from utils.shallow_water.williamson1992 import case5 as w5
 
-import mg
+from utils.mg import ManifoldTransferManager
 
 import argparse
 parser = argparse.ArgumentParser(description='Moist Williamson 5 testcase')
@@ -53,8 +53,6 @@ V0 = fd.FunctionSpace(mesh, "CG", args.degree+2)
 W = fd.MixedFunctionSpace((V1, V2, V2, V2, V2, V2))
 # velocity, depth, temperature, vapour, cloud, rain
 
-du, dD, dbuoy, dqv, dqc, dqr = fd.TestFunctions(W)
-
 Omega = earth.Omega  # rotation rate
 f = w5.coriolis_expression(x, y, z)  # Coriolis parameter
 g = earth.Gravity  # Gravitational constant
@@ -62,75 +60,98 @@ b = fd.Function(V2, name="Topography")
 
 # h = D + b
 
-dx = fd.dx
+# finite element forms
+
+n = fd.FacetNormal(mesh)
+outward_normals = fd.CellNormal(mesh)
+
+
+def perp(u):
+    return fd.cross(outward_normals, u)
+
+
+def form_advection(u, v):
+    def both(u):
+        return 2*fd.avg(u)
+    upwind = 0.5 * (fd.sign(fd.dot(u, n)) + 1)
+    k = 0.5*fd.inner(u, u)
+    return (fd.inner(v, f*perp(u))*fd.dx
+            - fd.inner(perp(fd.grad(fd.inner(v, perp(u)))), u)*fd.dx
+            - fd.div(v)*k*fd.dx
+            + fd.inner(both(perp(n)*fd.inner(v, perp(u))),
+                       both(upwind*u))*fd.dS)
+
+
+def form_transport(u, q, p, conservative=False):
+    uup = 0.5 * (fd.dot(u, n) + abs(fd.dot(u, n)))
+    flux = fd.jump(p)*(uup('+')*q('+')
+                       - uup('-')*q('-'))*fd.dS
+    if conservative:
+        volume = -fd.inner(fd.grad(p), u)*q*fd.dx
+    else:
+        volume = -fd.inner(fd.div(p*u), q)*fd.dx
+    return volume + flux
+
+
+def form_function_velocity_dry(g, b, f, u, h, v):
+    A = form_advection(u, v)
+    P = -fd.div(v)*g*(h + b)*fd.dx
+    return A + P
+
+
+def form_function_velocity_moist(g, b, f, u, h, B, v):
+    A = form_advection(u, v)
+    # Thermal terms from Nell
+    # b grad (D+B) + D/2 grad b
+    # integrate by parts
+    # -<div(bv), (D+B)> + << jump(vb, n), {D+B} >>
+    # -<div(Dv), b/2> + <<jump(Dv, n), {b/2} >>
+    P = (- fd.div(B*v)*(h + b)*fd.dx
+         + fd.jump(B*v, n)*fd.avg(h + b)*fd.dS
+         - fd.div(h*v)*(B/2)*fd.dx
+         + fd.jump(h*v, n)*fd.avg(B/2)*fd.dS
+    )
+    return A + P
+
+
+def form_function_depth(u, h, p):
+    return form_transport(u, h, p, conservative=True)
+
+def u_op(v, u, h, B):
+    return form_function_velocity_moist(g, b, f, u, h, B, v)
+
+def h_op(phi, u, h):
+    return form_function_depth(u, h, phi)
+
+def q_op(phi, u, q):
+    return form_transport(u, q, phi, conservative=False)
 
 Un = fd.Function(W)
 Unp1 = fd.Function(W)
-
-u0, D0, buoy0, qv0, qc0, qr0 = fd.split(Un)
-u1, D1, buoy1, qv1, qc1, qr1  = fd.split(Unp1)
-n = fd.FacetNormal(mesh)
-
-
-def both(u):
-    return 2*fd.avg(u)
+u0, h0, B0, qv0, qc0, qr0 = fd.split(Un)
+u1, h1, B1, qv1, qc1, qr1  = fd.split(Unp1)
+du, dh, dB, dqv, dqc, dqr = fd.TestFunctions(W)
 
 dT = fd.Constant(0.)
-dS = fd.dS
-
-def u_op(v, u, D, buoy):
-    Upwind = 0.5 * (fd.sign(fd.dot(u, n)) + 1)
-    K = 0.5*fd.inner(u, u)
-    return (
-        fd.inner(v, f*perp(u))*dx
-        - fd.inner(perp(fd.grad(fd.inner(v, perp(u)))), u)*dx
-        + fd.inner(both(perp(n)*fd.inner(v, perp(u))),
-                   both(Upwind*u))*dS
-        - fd.div(v)*K*dx
-        # Thermal terms from Nell
-        # b grad (D+B) + D/2 grad b
-        # integrate by parts
-        # -<div(bv), (D+B)> + << jump(vb, n), {D+B} >>
-        # -<div(Dv), b/2> + <<jump(Dv, n), {b/2} >>
-        - fd.div(buoy*v)*(D+b)*dx
-        + fd.jump(buoy*v, n)*fd.avg(D+b)*dS
-        - fd.div(D*v)*buoy/2*dx
-        + fd.jump(D*v, n)*fd.avg(buoy/2)*dS
-    )
-
-def h_op(phi, u, h):
-    uup = 0.5 * (fd.dot(u, n) + abs(fd.dot(u, n)))
-    return (- fd.inner(fd.grad(phi), u)*h*dx
-            + fd.jump(phi)*(uup('+')*h('+')
-                            - uup('-')*h('-'))*dS)
-
-def q_op(phi, u, q):
-    uup = 0.5 * (fd.dot(u, n) + abs(fd.dot(u, n)))
-    return (- fd.inner(fd.div(phi*u), q)*dx
-            + fd.jump(phi)*(uup('+')*q('+')
-                            - uup('-')*q('-'))*dS)
 
 "implicit midpoint rule"
 uh = 0.5*(u0 + u1)
-Dh = 0.5*(D0 + D1)
-buoyh = 0.5*(buoy0 + buoy1)
+hh = 0.5*(h0 + h1)
+Bh = 0.5*(B0 + B1)
 qvh = 0.5*(qv0 + qv1)
 qch = 0.5*(qc0 + qc1)
 qrh = 0.5*(qr0 + qr1)
 
-# du, dD, dbuoy, dqv, dqc, dqr = fd.TestFunctions(W)
-# u0, D0, buoy0, qv0, qc0, qr0 = fd.split(Un)
-# u1, D1, buoy1, qv1, qc1, qr1  = fd.split(Unp1)
 
 q0 = fd.Constant(135)
-qsat = q0/g/(Dh + b)*fd.exp(20*(1-buoyh/g))
+qsat = q0/g/(hh + b)*fd.exp(20*(1-Bh/g))
 L = fd.Constant(10)
 gamma_r = fd.Constant(1.0e-3)
-gamma_v = 1/(1 + L*(20*q0/g/(Dh + b))*fd.exp(20*(1-buoyh/g)))
+gamma_v = 1/(1 + L*(20*q0/g/(hh + b))*fd.exp(20*(1-Bh/g)))
 q_precip = fd.Constant(1.0e-4)
 
-dx0 = dx('everywhere', metadata = {'quadrature_degree': 6,
-                                   'representation': 'quadrature'})
+dx0 = fd.dx('everywhere', metadata = {'quadrature_degree': 6,
+                                      'representation': 'quadrature'})
 
 def del_qv(qv):
     return fd.max_value(0, gamma_v*(qv - qsat))/dT
@@ -142,20 +163,31 @@ def del_qr(qc):
     return fd.max_value(0, gamma_r*(qc - q_precip))/dT
 
 eqn = (
-    fd.inner(du, u1 - u0)*dx
-    + dT*u_op(du, uh, Dh, buoyh)
-    + dD*(D1 - D0)*dx
-    + dT*h_op(dD, uh, Dh)
-    + dbuoy*(buoy1 - buoy0)*dx
-    + dT*q_op(dbuoy, uh, buoyh)
-    + dT*g*L*dbuoy*(del_qv(qvh) - del_qc(qch, qvh))*dx0 #  buoyancy source
-    + dqv*(qv1 - qv0)*dx
+    # velocity
+    fd.inner(du, u1 - u0)*fd.dx
+    + dT*u_op(du, uh, hh, Bh)
+
+    # depth
+    + dh*(h1 - h0)*fd.dx
+    + dT*h_op(dh, uh, hh)
+
+    # buoyancy / temperature
+    + dB*(B1 - B0)*fd.dx
+    + dT*q_op(dB, uh, Bh)
+    + dT*g*L*dB*(del_qv(qvh) - del_qc(qch, qvh))*dx0 #  buoyancy source
+
+    # vapour
+    + dqv*(qv1 - qv0)*fd.dx
     + dT*q_op(dqv, uh, qvh)
     - dT*dqv*(del_qc(qch, qvh) - del_qv(qvh))*dx0 #  qv source
-    + dqc*(qc1 - qc0)*dx
+
+    # cloud
+    + dqc*(qc1 - qc0)*fd.dx
     + dT*q_op(dqc, uh, qch)
     - dT*dqc*(del_qv(qvh) - del_qc(qch, qvh) - del_qr(qch))*dx0 #  qc source
-    + dqr*(qr1 - qr0)*dx
+
+    # rain
+    + dqr*(qr1 - qr0)*fd.dx
     + dT*q_op(dqr, uh, qrh)
     - dT*dqr*del_qr(qch)*dx0 #  qr source
 )
@@ -196,6 +228,7 @@ sparameters = {
     "pc_mg_cycle_type": "v",
     "pc_mg_type": "multiplicative",
     "mg": {
+        "transfer_manager": f"{__name__}.ManifoldTransferManager",
         "levels": {
             "ksp_type": "gmres",
             "ksp_max_it": 3,
@@ -236,16 +269,6 @@ t = 0.
 nprob = fd.NonlinearVariationalProblem(eqn, Unp1)
 nsolver = fd.NonlinearVariationalSolver(nprob,
                                         solver_parameters=sparameters)
-vtransfer = mg.ManifoldTransfer()
-tm = fd.TransferManager()
-transfers = {
-    V1.ufl_element(): (vtransfer.prolong, vtransfer.restrict,
-                       vtransfer.inject),
-    V2.ufl_element(): (vtransfer.prolong, vtransfer.restrict,
-                       vtransfer.inject)
-}
-transfermanager = fd.TransferManager(native_transfers=transfers)
-nsolver.set_transfer_manager(transfermanager)
 
 dmax = args.dmax
 hmax = 24*dmax
@@ -265,9 +288,9 @@ bexpr = w5.topography_expression(x, y, z)
 
 b.interpolate(bexpr)
 
-u0, D0, buoy0, qv0, qc0, qr0n = Un.subfunctions
+u0, h0, B0, qv0, qc0, qr0n = Un.subfunctions
 u0.assign(un)
-D0.assign(etan + H - b)
+h0.assign(etan + H - b)
 
 # The below is from Nell Hartney
 eps = fd.Constant(1.0/300)
@@ -286,11 +309,11 @@ F = (2/(fd.pi**2))*(phi_x*(phi_x-fd.pi/2)*SP -
                  + phi_x*(phi_x+fd.pi/2)*NP)
 theta_expr = F + mu1*EQ*fd.cos(phi_x)*fd.sin(lambda_x)
 buoyexpr = g * (1 - theta_expr)
-buoy0.interpolate(buoyexpr)
+B0.interpolate(buoyexpr)
 
 # The below is from Nell Hartney
 # expression for initial water vapour depends on initial saturation
-initial_msat = q0/(g*D0 + g*bexpr) * fd.exp(20*theta_expr)
+initial_msat = q0/(g*h0 + g*bexpr) * fd.exp(20*theta_expr)
 vexpr = mu2 * initial_msat
 qv0.interpolate(vexpr)
 # cloud and rain initially zero
@@ -299,14 +322,14 @@ q = fd.TrialFunction(V0)
 p = fd.TestFunction(V0)
 
 qn = fd.Function(V0, name="Relative Vorticity")
-veqn = q*p*dx + fd.inner(perp(fd.grad(p)), un)*dx
+veqn = q*p*fd.dx + fd.inner(perp(fd.grad(p)), un)*fd.dx
 vprob = fd.LinearVariationalProblem(fd.lhs(veqn), fd.rhs(veqn), qn)
 qparams = {'ksp_type':'cg'}
 qsolver = fd.LinearVariationalSolver(vprob,
                                      solver_parameters=qparams)
 
 file_sw = fd.File(name+'.pvd')
-etan.assign(D0 - H + b)
+etan.assign(h0 - H + b)
 un.assign(u0)
 qsolver.solve()
 qvn = fd.Function(V2, name="Water Vapour")
@@ -331,7 +354,7 @@ while t < tmax + 0.5*dt:
     Un.assign(Unp1)
     
     if tdump > dumpt - dt*0.5:
-        etan.assign(D0 - H + b)
+        etan.assign(h0 - H + b)
         un.assign(u0)
         qsolver.solve()
         qvn.interpolate(qv0)
