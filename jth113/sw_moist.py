@@ -64,6 +64,8 @@ b = fd.Function(V2, name="Topography")
 n = fd.FacetNormal(mesh)
 outward_normals = fd.CellNormal(mesh)
 
+# mass matrices
+
 
 def form_mass_velocity(u, v):
     return fd.inner(u, v)*fd.dx
@@ -85,6 +87,8 @@ def form_mass(u, h, B, qv, qc, qr, du, dh, dB, dqv, dqc, dqr):
             + form_mass_moisture(qc, dqc)
             + form_mass_moisture(qr, dqr))
 
+
+# velocity / depth forms
 
 def perp(u):
     return fd.cross(outward_normals, u)
@@ -138,20 +142,71 @@ def form_function_depth_moist(u, h, B, qv, qc, qr, p):
     return form_transport(u, h, p, conservative=True)
 
 
+# moisture forms
+
+
+dx0 = fd.dx('everywhere', metadata = {'quadrature_degree': 6})
+
+q0 = fd.Constant(135)
+gamma_r = fd.Constant(1.0e-3)
+q_precip = fd.Constant(1.0e-4)
+
+dT = fd.Constant(0.)
+L = fd.Constant(10)
+
+
+def del_qv(qv, qsat, gamma_v, dT):
+    return fd.max_value(0, gamma_v*(qv - qsat))/dT
+
+
+def del_qc(qc, qv, qsat, gamma_v, dT):
+    return fd.min_value(qc, fd.max_value(0, gamma_v*(qsat - qv)))/dT
+
+
+def del_qr(qc, q_precip, gamma_r, dT):
+    return fd.max_value(0, gamma_r*(qc - q_precip))/dT
+
+
+def gamma_v_expr(h, B):
+    return 1/(1 + L*(20*q0/g/(h + b))*fd.exp(20*(1-B/g)))
+
+
+def qsat_expr(h, B):
+    return q0/g/(h + b)*fd.exp(20*(1-B/g))
+
+
 def form_function_bouyancy(u, h, B, qv, qc, qr, dB):
-    return form_transport(u, B, dB, conservative=False)
+    gamma_v = gamma_v_expr(h, B)
+    qsat = qsat_expr(h, B)
+    delqv = del_qv(qv, qsat, gamma_v, dT)
+    delqc = del_qc(qc, qv, qsat, gamma_v, dT)
+    return (form_transport(u, B, dB, conservative=False)
+            + g*L*dB*(delqv - delqc)*dx0)
 
 
 def form_function_vapour(u, h, B, qv, qc, qr, dqv):
-    return form_transport(u, qv, dqv, conservative=False)
+    gamma_v = gamma_v_expr(h, B)
+    qsat = qsat_expr(h, B)
+    delqv = del_qv(qv, qsat, gamma_v, dT)
+    delqc = del_qc(qc, qv, qsat, gamma_v, dT)
+    return (form_transport(u, qv, dqv, conservative=False)
+            - dqv*(delqc - delqv)*dx0)
 
 
 def form_function_cloud(u, h, B, qv, qc, qr, dqc):
-    return form_transport(u, qc, dqc, conservative=False)
+    gamma_v = gamma_v_expr(h, B)
+    qsat = qsat_expr(h, B)
+    delqv = del_qv(qv, qsat, gamma_v, dT)
+    delqc = del_qc(qc, qv, qsat, gamma_v, dT)
+    delqr = del_qr(qc, q_precip, gamma_r, dT)
+    return (form_transport(u, qc, dqc, conservative=False)
+            - dqc*(delqv - delqc - delqr)*dx0)
 
 
 def form_function_rain(u, h, B, qv, qc, qr, dqr):
-    return form_transport(u, qr, dqr, conservative=False)
+    delqr = del_qr(qc, q_precip, gamma_r, dT)
+    return (form_transport(u, qr, dqr, conservative=False)
+            - dqr*delqr*dx0)
 
 
 def form_function(*args):
@@ -171,8 +226,6 @@ u0, h0, B0, qv0, qc0, qr0 = fd.split(Un)
 u1, h1, B1, qv1, qc1, qr1  = fd.split(Unp1)
 du, dh, dB, dqv, dqc, dqr = fd.TestFunctions(W)
 
-dT = fd.Constant(0.)
-
 "implicit midpoint rule"
 uh = 0.5*(u0 + u1)
 hh = 0.5*(h0 + h1)
@@ -181,27 +234,7 @@ qvh = 0.5*(qv0 + qv1)
 qch = 0.5*(qc0 + qc1)
 qrh = 0.5*(qr0 + qr1)
 
-q0 = fd.Constant(135)
-qsat = q0/g/(hh + b)*fd.exp(20*(1-Bh/g))
-L = fd.Constant(10)
-gamma_r = fd.Constant(1.0e-3)
-gamma_v = 1/(1 + L*(20*q0/g/(hh + b))*fd.exp(20*(1-Bh/g)))
-q_precip = fd.Constant(1.0e-4)
-
-dx0 = fd.dx('everywhere', metadata = {'quadrature_degree': 6,
-                                      'representation': 'quadrature'})
-
-def del_qv(qv):
-    return fd.max_value(0, gamma_v*(qv - qsat))/dT
-
-
-def del_qc(qc, qv):
-    return fd.min_value(qc, fd.max_value(0, gamma_v*(qsat - qv)))/dT
-
-
-def del_qr(qc):
-    return fd.max_value(0, gamma_r*(qc - q_precip))/dT
-
+half = fd.Constant(0.5)
 
 eqn = (
     # time derivative
@@ -209,31 +242,11 @@ eqn = (
     - form_mass(u0, h0, B0, qv0, qc0, qr0, du, dh, dB, dqv, dqc, dqr)
 
     # velocity + depth + buoyancy + vapour + cloud + rain
-    + dT*form_function(uh, hh, Bh, qvh, qch, qrh, du, dh, dB, dqv, dqc, dqr)
+    # + dT*form_function(uh, hh, Bh, qvh, qch, qrh, du, dh, dB, dqv, dqc, dqr)
 
-    # buoyancy / temperature
-    + dT*g*L*dB*(del_qv(qvh) - del_qc(qch, qvh))*dx0 #  buoyancy source
-
-    # vapour
-    - dT*dqv*(del_qc(qch, qvh) - del_qv(qvh))*dx0 #  qv source
-
-    # cloud
-    - dT*dqc*(del_qv(qvh) - del_qc(qch, qvh) - del_qr(qch))*dx0 #  qc source
-
-    # rain
-    - dT*dqr*del_qr(qch)*dx0 #  qr source
+    + dT*half*form_function(u0, h0, B0, qv0, qc0, qr0, du, dh, dB, dqv, dqc, dqr)
+    + dT*half*form_function(u1, h1, B1, qv1, qc1, qr1, du, dh, dB, dqv, dqc, dqr)
 )
-    
-# U_t + N(U) = 0
-# IMPLICIT MIDPOINT
-# U^{n+1} - U^n + dt*N( (U^{n+1}+U^n)/2 ) = 0.
-
-# Newton's method
-# f(x) = 0, f:R^M -> R^M
-# [Df(x)]_{i,j} = df_i/dx_j
-# x^0, x^1, ...
-# Df(x^k).xp = -f(x^k)
-# x^{k+1} = x^k + xp.
 
 # monolithic solver options
 
@@ -290,6 +303,9 @@ sparameters = {
             "pc_python_type": "firedrake.AssembledPC",
             "assembled_pc_type": "lu",
             "assembled_pc_factor_mat_solver_type": "mumps",
+            "assembled_pc_factor_mat_ordering_type": "rcm",
+            "assembled_pc_factor_reuse_ordering": None,
+            "assembled_pc_factor_reuse_fill": None,
         },
     },
 }
