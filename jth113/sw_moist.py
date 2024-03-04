@@ -1,5 +1,4 @@
 import firedrake as fd
-#get command arguments
 from petsc4py import PETSc
 PETSc.Sys.popErrorHandler()
 
@@ -66,6 +65,27 @@ n = fd.FacetNormal(mesh)
 outward_normals = fd.CellNormal(mesh)
 
 
+def form_mass_velocity(u, v):
+    return fd.inner(u, v)*fd.dx
+
+
+def form_mass_depth(h, p):
+    return h*p*fd.dx
+
+
+def form_mass_moisture(q, phi):
+    return q*phi*fd.dx
+
+
+def form_mass(u, h, B, qv, qc, qr, du, dh, dB, dqv, dqc, dqr):
+    return (form_mass_velocity(u, du)
+            + form_mass_depth(h, dh)
+            + form_mass_moisture(B, dB)
+            + form_mass_moisture(qv, dqv)
+            + form_mass_moisture(qc, dqc)
+            + form_mass_moisture(qr, dqr))
+
+
 def perp(u):
     return fd.cross(outward_normals, u)
 
@@ -99,7 +119,7 @@ def form_function_velocity_dry(g, b, f, u, h, v):
     return A + P
 
 
-def form_function_velocity_moist(g, b, f, u, h, B, v):
+def form_function_velocity_moist(g, b, f, u, h, B, qv, qc, qr, v):
     A = form_advection(u, v)
     # Thermal terms from Nell
     # b grad (D+B) + D/2 grad b
@@ -114,17 +134,36 @@ def form_function_velocity_moist(g, b, f, u, h, B, v):
     return A + P
 
 
-def form_function_depth(u, h, p):
+def form_function_depth_moist(u, h, B, qv, qc, qr, p):
     return form_transport(u, h, p, conservative=True)
 
-def u_op(v, u, h, B):
-    return form_function_velocity_moist(g, b, f, u, h, B, v)
 
-def h_op(phi, u, h):
-    return form_function_depth(u, h, phi)
+def form_function_bouyancy(u, h, B, qv, qc, qr, dB):
+    return form_transport(u, B, dB, conservative=False)
 
-def q_op(phi, u, q):
-    return form_transport(u, q, phi, conservative=False)
+
+def form_function_vapour(u, h, B, qv, qc, qr, dqv):
+    return form_transport(u, qv, dqv, conservative=False)
+
+
+def form_function_cloud(u, h, B, qv, qc, qr, dqc):
+    return form_transport(u, qc, dqc, conservative=False)
+
+
+def form_function_rain(u, h, B, qv, qc, qr, dqr):
+    return form_transport(u, qr, dqr, conservative=False)
+
+
+def form_function(*args):
+    ncpts = 6
+    trials, tests = args[:ncpts], args[ncpts:]
+    return (form_function_velocity_moist(g, b, f, *trials, tests[0])
+            + form_function_depth_moist(*trials, tests[1])
+            + form_function_bouyancy(*trials, tests[2])
+            + form_function_vapour(*trials, tests[3])
+            + form_function_cloud(*trials, tests[4])
+            + form_function_rain(*trials, tests[5]))
+
 
 Un = fd.Function(W)
 Unp1 = fd.Function(W)
@@ -142,7 +181,6 @@ qvh = 0.5*(qv0 + qv1)
 qch = 0.5*(qc0 + qc1)
 qrh = 0.5*(qr0 + qr1)
 
-
 q0 = fd.Constant(135)
 qsat = q0/g/(hh + b)*fd.exp(20*(1-Bh/g))
 L = fd.Constant(10)
@@ -156,39 +194,33 @@ dx0 = fd.dx('everywhere', metadata = {'quadrature_degree': 6,
 def del_qv(qv):
     return fd.max_value(0, gamma_v*(qv - qsat))/dT
 
+
 def del_qc(qc, qv):
     return fd.min_value(qc, fd.max_value(0, gamma_v*(qsat - qv)))/dT
+
 
 def del_qr(qc):
     return fd.max_value(0, gamma_r*(qc - q_precip))/dT
 
-eqn = (
-    # velocity
-    fd.inner(du, u1 - u0)*fd.dx
-    + dT*u_op(du, uh, hh, Bh)
 
-    # depth
-    + dh*(h1 - h0)*fd.dx
-    + dT*h_op(dh, uh, hh)
+eqn = (
+    # time derivative
+    form_mass(u1, h1, B1, qv1, qc1, qr1, du, dh, dB, dqv, dqc, dqr)
+    - form_mass(u0, h0, B0, qv0, qc0, qr0, du, dh, dB, dqv, dqc, dqr)
+
+    # velocity + depth + buoyancy + vapour + cloud + rain
+    + dT*form_function(uh, hh, Bh, qvh, qch, qrh, du, dh, dB, dqv, dqc, dqr)
 
     # buoyancy / temperature
-    + dB*(B1 - B0)*fd.dx
-    + dT*q_op(dB, uh, Bh)
     + dT*g*L*dB*(del_qv(qvh) - del_qc(qch, qvh))*dx0 #  buoyancy source
 
     # vapour
-    + dqv*(qv1 - qv0)*fd.dx
-    + dT*q_op(dqv, uh, qvh)
     - dT*dqv*(del_qc(qch, qvh) - del_qv(qvh))*dx0 #  qv source
 
     # cloud
-    + dqc*(qc1 - qc0)*fd.dx
-    + dT*q_op(dqc, uh, qch)
     - dT*dqc*(del_qv(qvh) - del_qc(qch, qvh) - del_qr(qch))*dx0 #  qc source
 
     # rain
-    + dqr*(qr1 - qr0)*fd.dx
-    + dT*q_op(dqr, uh, qrh)
     - dT*dqr*del_qr(qch)*dx0 #  qr source
 )
     
