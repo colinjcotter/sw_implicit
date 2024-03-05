@@ -66,7 +66,8 @@ mesh = mh[-1]
 
 R0 = fd.Constant(R0)
 cx, cy, cz = fd.SpatialCoordinate(mesh)
-outward_normals = fd.CellNormal(mesh)
+Vn = fd.VectorFunctionSpace(mesh, "CG", deg)
+outward_normals = fd.Function(Vn).interpolate(fd.CellNormal(mesh))
 
 def perp(u):
     return fd.cross(outward_normals, u)
@@ -140,31 +141,36 @@ def q_op(phi, u, q):
                             - uup('-')*q('-'))*dS)
 
 "implicit midpoint rule"
-uh = 0.5*(u0 + u1)
-Dh = 0.5*(D0 + D1)
-buoyh = 0.5*(buoy0 + buoy1)
-qvh = 0.5*(qv0 + qv1)
-qch = 0.5*(qc0 + qc1)
-qrh = 0.5*(qr0 + qr1)
+#uh = 0.5*(u0 + u1)
+#Dh = 0.5*(D0 + D1)
+#buoyh = 0.5*(buoy0 + buoy1)
+#qvh = 0.5*(qv0 + qv1)
+#qch = 0.5*(qc0 + qc1)
+#qrh = 0.5*(qr0 + qr1)
 
 # du, dD, dbuoy, dqv, dqc, dqr = fd.TestFunctions(W)
 # u0, D0, buoy0, qv0, qc0, qr0 = fd.split(Un)
 # u1, D1, buoy1, qv1, qc1, qr1  = fd.split(Unp1)
 
 q0 = fd.Constant(135)
-qsat = q0/g/(Dh + b)*fd.exp(20*(1-buoyh/g))
 L = fd.Constant(10)
 gamma_r = fd.Constant(1.0e-3)
-gamma_v = 1/(1 + L*(20*q0/g/(Dh + b))*fd.exp(20*(1-buoyh/g)))
 q_precip = fd.Constant(1.0e-4)
 
-dx0 = dx('everywhere', metadata = {'quadrature_degree': 6,
+dx0 = dx('everywhere', metadata = {'quadrature_degree': 4,
                                    'representation': 'quadrature'})
+#dx0 = dx
+#dS = dS('everywhere', metadata = {'quadrature_degree': 4,
+#                                  'representation': 'quadrature'})
 
-def del_qv(qv):
+def del_qv(qv, D, buoy):
+    qsat = q0/g/(D + b)*fd.exp(20*(1-buoy/g))
+    gamma_v = 1/(1 + L*20*q0/g/(D + b)*fd.exp(20*(1-buoy/g)))
     return fd.max_value(0, gamma_v*(qv - qsat))/dT
 
-def del_qc(qc, qv):
+def del_qc(qc, qv, D, buoy):
+    qsat = q0/g/(D + b)*fd.exp(20*(1-buoy/g))
+    gamma_v = 1/(1 + L*20*q0/g/(D + b)*fd.exp(20*(1-buoy/g)))
     return fd.min_value(qc, fd.max_value(0, gamma_v*(qsat - qv)))/dT
 
 def del_qr(qc):
@@ -172,21 +178,44 @@ def del_qr(qc):
 
 eqn = (
     fd.inner(du, u1 - u0)*dx
-    + dT*u_op(du, uh, Dh, buoyh)
+    + 0.5*dT*u_op(du, u0, D0, buoy0)
+    + 0.5*dT*u_op(du, u1, D1, buoy1)
+
     + dD*(D1 - D0)*dx
-    + dT*h_op(dD, uh, Dh)
+    + 0.5*dT*h_op(dD, u0, D0)
+    + 0.5*dT*h_op(dD, u1, D1)
+
     + dbuoy*(buoy1 - buoy0)*dx
-    + dT*q_op(dbuoy, uh, buoyh)
-    + dT*g*L*dbuoy*(del_qv(qvh) - del_qc(qch, qvh))*dx0 #  buoyancy source
+    + 0.5*dT*q_op(dbuoy, u0, buoy0)
+    + 0.5*dT*q_op(dbuoy, u1, buoy1)
+    + 0.5*dT*g*L*dbuoy*(del_qv(qv0, D0, buoy0)
+                        - del_qc(qc0, qv0, D0, buoy0))*dx0 #  buoyancy source
+    + 0.5*dT*g*L*dbuoy*(del_qv(qv1, D1, buoy1)
+                        - del_qc(qc1, qv1, D1, buoy1))*dx0 #  buoyancy source
+
     + dqv*(qv1 - qv0)*dx
-    + dT*q_op(dqv, uh, qvh)
-    - dT*dqv*(del_qc(qch, qvh) - del_qv(qvh))*dx0 #  qv source
+    + 0.5*dT*q_op(dqv, u0, qv0)
+    + 0.5*dT*q_op(dqv, u1, qv1)
+    - 0.5*dT*dqv*(del_qc(qc0, qv0, D0, buoy0)
+                  - del_qv(qv0, D0, buoy0))*dx0 #  qv source
+    - 0.5*dT*dqv*(del_qc(qc1, qv1, D1, buoy1)
+                  - del_qv(qv1, D1, buoy1))*dx0 #  qv source
+
     + dqc*(qc1 - qc0)*dx
-    + dT*q_op(dqc, uh, qch)
-    - dT*dqc*(del_qv(qvh) - del_qc(qch, qvh) - del_qr(qch))*dx0 #  qc source
+    + 0.5*dT*q_op(dqc, u0, qc0)
+    + 0.5*dT*q_op(dqc, u1, qc1)
+    - 0.5*dT*dqc*(del_qv(qv0, D0, buoy=buoy0)
+              - del_qc(qc0, qv0, D0, buoy0)
+              - del_qr(qc0))*dx0 #  qc source
+    - 0.5*dT*dqc*(del_qv(qv1, D1, buoy=buoy1)
+              - del_qc(qc1, qv1, D1, buoy1)
+              - del_qr(qc1))*dx0 #  qc source
+
     + dqr*(qr1 - qr0)*dx
-    + dT*q_op(dqr, uh, qrh)
-    - dT*dqr*del_qr(qch)*dx0 #  qr source
+    + 0.5*dT*q_op(dqr, u0, qr0)
+    + 0.5*dT*q_op(dqr, u1, qr1)
+    - 0.5*dT*dqr*del_qr(qc0)*dx0 #  qr source
+    - 0.5*dT*dqr*del_qr(qc1)*dx0 #  qr source
 )
     
 # U_t + N(U) = 0
@@ -268,6 +297,7 @@ u_expr = fd.as_vector([-u_max*x[1]/R0, u_max*x[0]/R0, 0.0])
 eta_expr = - ((R0 * Omega * u_max + u_max*u_max/2.0)*(x[2]*x[2]/(R0*R0)))/g
 un = fd.Function(V1, name="Velocity").project(u_expr)
 etan = fd.Function(V2, name="Elevation").project(eta_expr)
+Dn = fd.Function(V2, name="Depth")
 
 # Topography.
 rl = fd.pi/9.0
@@ -298,6 +328,17 @@ F = (2/(fd.pi**2))*(phi_x*(phi_x-fd.pi/2)*SP -
                  + phi_x*(phi_x+fd.pi/2)*NP)
 theta_expr = F + mu1*EQ*fd.cos(phi_x)*fd.sin(lambda_x)
 buoyexpr = g * (1 - theta_expr)
+# The below is from also Nell Hartney
+omega = Omega*R0*u_0 + u_0**2/2
+sigma = omega/fd.Constant(10)
+Phi0 = fd.Constant(3*fd.exp(4))
+theta0 = eps*Phi0**2
+brk0 = (omega + sigma)*fd.cos(phi_x)**2 + 2*(Phi0 - omega - sigma)
+buoyexpr = g * (
+    1 - (theta0 + sigma*fd.cos(phi_x)**2*brk0)/
+    (Phi0**2 + (omega + sigma)**2*fd.sin(phi_x)**2
+     - 2*Phi0*(omega + sigma)*fd.sin(phi_x)**2))
+
 buoy0.interpolate(buoyexpr)
 
 # The below is from Nell Hartney
@@ -321,13 +362,16 @@ file_sw = fd.File(name+'.pvd')
 etan.assign(D0 - H + b)
 un.assign(u0)
 qsolver.solve()
+buoyn = fd.Function(V2, name="Buoyancy")
 qvn = fd.Function(V2, name="Water Vapour")
 qcn = fd.Function(V2, name="Cloud Vapour")
 qrn = fd.Function(V2, name="Rain")
+Dn.interpolate(D0)
 qvn.interpolate(qv0)
 qcn.interpolate(qc0)
 qrn.interpolate(qr0)
-file_sw.write(un, etan, qn, qvn, qcn, qrn)
+buoyn.interpolate(buoy0)
+file_sw.write(un, etan, buoyn, qn, qvn, qcn, qrn)
 Unp1.assign(Un)
 
 PETSc.Sys.Print('tmax', tmax, 'dt', dt)
@@ -346,10 +390,11 @@ while t < tmax + 0.5*dt:
         etan.assign(D0 - H + b)
         un.assign(u0)
         qsolver.solve()
+        buoyn.interpolate(buoy0)
         qvn.interpolate(qv0)
         qcn.interpolate(qc0)
         qrn.interpolate(qr0)
-        file_sw.write(un, etan, qn, qvn, qcn, qrn)
+        file_sw.write(un, etan, buoyn, qn, qvn, qcn, qrn)
         tdump -= dumpt
     stepcount += 1
     itcount += nsolver.snes.getLinearSolveIterations()
