@@ -241,9 +241,6 @@ eqn = (
     form_mass(u1, h1, B1, qv1, qc1, qr1, du, dh, dB, dqv, dqc, dqr)
     - form_mass(u0, h0, B0, qv0, qc0, qr0, du, dh, dB, dqv, dqc, dqr)
 
-    # velocity + depth + buoyancy + vapour + cloud + rain
-    # + dT*form_function(uh, hh, Bh, qvh, qch, qrh, du, dh, dB, dqv, dqc, dqr)
-
     + dT*half*form_function(u0, h0, B0, qv0, qc0, qr0, du, dh, dB, dqv, dqc, dqr)
     + dT*half*form_function(u1, h1, B1, qv1, qc1, qr1, du, dh, dB, dqv, dqc, dqr)
 )
@@ -271,12 +268,12 @@ sparameters = {
     },
     "pc_type": "mg",
     "pc_mg_cycle_type": "v",
-    "pc_mg_type": "multiplicative",
+    "pc_mg_type": "full",
     "mg": {
         "transfer_manager": f"{__name__}.ManifoldTransferManager",
         "levels": {
             "ksp_type": "gmres",
-            "ksp_max_it": 3,
+            "ksp_max_it": args.kspmg,
             "ksp_convergence_test": "skip",
             "pc_type": "python",
             "pc_python_type": "firedrake.PatchPC",
@@ -376,7 +373,7 @@ qparams = {'ksp_type':'cg'}
 qsolver = fd.LinearVariationalSolver(vprob,
                                      solver_parameters=qparams)
 
-file_sw = fd.File(name+'.pvd')
+file_sw = fd.File(f'output/{name}.pvd')
 etan.assign(h0 - H + b)
 un.assign(u0)
 qsolver.solve()
@@ -393,7 +390,7 @@ PETSc.Sys.Print('tmax', tmax, 'dt', dt)
 itcount = 0
 stepcount = 0
 while t < tmax + 0.5*dt:
-    PETSc.Sys.Print(f"\n=== --- Timestep {stepcount} at time {t} --- ===\n")
+    PETSc.Sys.Print(f"\n=== --- Timestep {stepcount} at time {t/(60*60)} hours --- ===\n")
     t += dt
     tdump += dt
 
