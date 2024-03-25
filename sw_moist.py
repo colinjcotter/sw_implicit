@@ -323,21 +323,30 @@ mu2 = fd.Constant(0.98)
 
 # The below is from Nell Hartney
 # expression for initial buoyancy - note the bracket around 1-mu
-F = (2/(fd.pi**2))*(phi_x*(phi_x-fd.pi/2)*SP -
-                 2*(phi_x+fd.pi/2)*(phi_x-fd.pi/2)*(1-mu1)*EQ
-                 + phi_x*(phi_x+fd.pi/2)*NP)
-theta_expr = F + mu1*EQ*fd.cos(phi_x)*fd.sin(lambda_x)
+problem = "W5"
+if problem == "W5":
+    F = (2/(fd.pi**2))*(phi_x*(phi_x-fd.pi/2)*SP -
+                        2*(phi_x+fd.pi/2)*(phi_x-fd.pi/2)*(1-mu1)*EQ
+                        + phi_x*(phi_x+fd.pi/2)*NP)
+    theta_expr = F + mu1*EQ*fd.cos(phi_x)*fd.sin(lambda_x)
+elif problem == "W2":
+    # The below is from also Nell Hartney
+    omega = Omega*R0*u_max + u_max**2/2
+    sigma = omega/fd.Constant(10)
+    import numpy as np
+    Phi0 = fd.Constant(3*np.exp(4))
+    theta0 = fd.Constant(1.0) #  eps*Phi0**2
+    brk0 = fd.Constant(1.0) # (omega + sigma)*fd.cos(phi_x)**2 + 2*(Phi0 - omega - sigma)
+    num0 = theta0 + sigma# *fd.cos(phi_x)**2*brk0
+    #den0 = (Phi0**2 + (omega + sigma)**2*fd.sin(phi_x)**4
+    #        - 2*Phi0*(omega + sigma)*fd.sin(phi_x)**2)
+    den0 = fd.Constant(1.0)
+    theta_expr = num0/den0
+else:
+    raise NotImplementedError
+
 buoyexpr = g * (1 - theta_expr)
-# The below is from also Nell Hartney
-omega = Omega*R0*u_0 + u_0**2/2
-sigma = omega/fd.Constant(10)
-Phi0 = fd.Constant(3*fd.exp(4))
-theta0 = eps*Phi0**2
-brk0 = (omega + sigma)*fd.cos(phi_x)**2 + 2*(Phi0 - omega - sigma)
-buoyexpr = g * (
-    1 - (theta0 + sigma*fd.cos(phi_x)**2*brk0)/
-    (Phi0**2 + (omega + sigma)**2*fd.sin(phi_x)**2
-     - 2*Phi0*(omega + sigma)*fd.sin(phi_x)**2))
+# b = g(1- theta)
 
 buoy0.interpolate(buoyexpr)
 

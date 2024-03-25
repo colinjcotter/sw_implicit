@@ -93,6 +93,7 @@ hydrostatic_rho(Vv, V2, mesh, thetan, rhon=None, pi_boundary=bdyC,
                     cp=cp, R_d=R_d, p_0=p_0, kappa=kappa, g=g, Up=Up,
                     top=False, Pi=Pi)
 bdyval = minimum(Pi)
+import sys; sys.exit()
 
 PETSc.Sys.Print("Solve with Pi_t =", bdyval)
 bdyC.assign(bdyval)
