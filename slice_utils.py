@@ -67,30 +67,13 @@ def hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary,
         'snes_rtol': 1.0e-6,
         'snes_atol': 1.0e-6,
         'ksp_monitor': None,
-        #'ksp_view': None,
         'snes_converged_reason': None,
-        'pc_type': "python",
-        'pc_python_type': 'firedrake.ASMStarPC',
-        'pc_star_construct_codim': 0,
-        #'pc_star_sub_sub' : {'pc_type': 'lu',
-        #                     'pc_factor_mat_solver_type': 'mumps'},
-        'pc_star_sub_sub' : {
-            "pc_type": "fieldsplit",
-            "pc_fieldsplit_type":"schur",
-            "pc_fieldsplit_schur_fact_type":"full",
-            "fieldsplit_detect_saddle_point": None,
-            "pc_fieldsplit_schur_precondition":"selfp",
-            "fieldsplit_Pressure_mat_schur_complement_ainv_type":"full",
-            "fieldsplit_Pressure_ksp_type":'preonly',
-            "fieldsplit_Pressure_pc_type":"lu",
-            "fieldsplit_Vv_ksp_type":"preonly",
-            "fieldsplit_Vv_pc_type":"lu",
-            "pc_factor_mat_solver_type": "mumps",
-            }
+        'pc_type': "lu",
+        'pc_factor_mat_solver_package':'mumps'
     }
 
     PiSolver = fd.LinearVariationalSolver(PiProblem,
-                                          solver_parameters=lu_params,
+                                          solver_parameters=my_params,
                                           options_prefix="pisolver")
     PiSolver.solve()
     v, Pi0 = wh.subfunctions
@@ -131,7 +114,7 @@ def hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary,
         RhoProblem = fd.NonlinearVariationalProblem(rhoeqn, wh, bcs=bcs)
 
         RhoSolver = fd.NonlinearVariationalSolver(RhoProblem,
-                                                  solver_parameters=lu_params,
+                                                  solver_parameters=my_params,
                                                   options_prefix="rhosolver")
 
         RhoSolver.solve()
@@ -272,7 +255,7 @@ def u_tendency(w, n, u, theta, rho,
     mesh = u.ufl_domain()
     K = fd.Constant(0.5, domain=mesh)*fd.inner(u, u)
     Upwind = 0.5*(fd.sign(fd.dot(u, n))+1)
-
+    
     eqn = (
         + fd.inner(u, curl0(cross1(u, w)))*fd.dx
         - fd.inner(both(Upwind*u),
@@ -280,7 +263,7 @@ def u_tendency(w, n, u, theta, rho,
         - fd.div(w)*K*fd.dx
         - cp*fd.div(theta*w)*Pi*fd.dx
         + cp*fd.jump(w*theta, n)*fd.avg(Pi)*fd.dS_v
-        + fd.inner(w, Up)*g*fd.dx
+         + fd.inner(w, Up)*g*fd.dx
         )
 
     if mu: # Newtonian dissipation in vertical
@@ -304,7 +287,8 @@ def eady_terms_u(du, theta, rho, cp, Pi, Eady):
 
 def eady_terms_theta(dtheta, u, Eady):
     s = Eady["dthetady"]
-    return dtheta*s*fd.inner(u, yvec)*fd.dx
+    y_vec = fd.as_vector([0., 1., 0.])
+    return dtheta*s*fd.inner(u, y_vec)*fd.dx
 
 def get_form_function(n, Up, c_pen,
                       cp, g, R_d, p_0, kappa, mu,
@@ -312,6 +296,7 @@ def get_form_function(n, Up, c_pen,
     def form_function(u, rho, theta, du, drho, dtheta):
         eqn = theta_tendency(dtheta, u, theta, n, Up, c_pen)
         eqn += rho_tendency(drho, rho, u, n)
+
         eqn += u_tendency(du, n, u, theta, rho,
                           cp, g, R_d, p_0, kappa, Up, mu, f, F)
         if Eady:
