@@ -279,14 +279,29 @@ def get_form_mass():
     def form_mass(u, rho, theta, du, drho, dtheta):
         return u_mass(u, du) + rho_mass(rho, drho) + theta_mass(theta, dtheta)
     return form_mass
-    
+
+def eady_terms_u(du, theta, rho, cp, Pi, Eady):
+    s = Eady["dthetady"]
+    Pi0 = Eady["Pi0"]
+    y_vec = fd.as_vector([0., 1., 0.])
+    return -cp*s*(Pi - Pi0)*fd.inner(du, y_vec)*fd.dx
+
+def eady_terms_theta(dtheta, u, Eady):
+    s = Eady["dthetady"]
+    return dtheta*s*fd.inner(u, yvec)*fd.dx
+
 def get_form_function(n, Up, c_pen,
-                      cp, g, R_d, p_0, kappa, mu, f=None, F=None):
+                      cp, g, R_d, p_0, kappa, mu,
+                      f=None, F=None, Eady=None):
     def form_function(u, rho, theta, du, drho, dtheta):
         eqn = theta_tendency(dtheta, u, theta, n, Up, c_pen)
         eqn += rho_tendency(drho, rho, u, n)
         eqn += u_tendency(du, n, u, theta, rho,
                           cp, g, R_d, p_0, kappa, Up, mu, f, F)
+        if Eady:
+            Pi = pi_formula(rho, theta, R_d, p_0, kappa)
+            eqn += eady_terms_u(du, theta, rho, cp, Pi, Eady)
+            eqn += eady_terms_theta(dtheta, u, Eady)
         return eqn
     return form_function
 
@@ -312,10 +327,13 @@ def slice_imr_form(un, unp1, rhon, rhonp1, thetan, thetanp1,
                    du, drho, dtheta,
                    dT, n, Up, c_pen,
                    cp, g, R_d, p_0, kappa, mu=None, f=None, F=None,
-                   viscosity=None, diffusivity=None):
+                   viscosity=None, diffusivity=None,
+                   Eady=None):
     form_mass = get_form_mass()
     form_function = get_form_function(n, Up, c_pen,
-                                      cp, g, R_d, p_0, kappa, mu, f, F)
+                                      cp, g, R_d, p_0,
+                                      kappa, mu, f, F,
+                                      Eady)
     mesh = un.ufl_domain()
     eqn = form_mass(unp1, rhonp1, thetanp1, du, drho, dtheta)
     eqn -= form_mass(un, rhon, thetan, du, drho, dtheta)
