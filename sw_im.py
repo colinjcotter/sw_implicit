@@ -1,6 +1,7 @@
 import firedrake as fd
 #get command arguments
 from petsc4py import PETSc
+from firedrake.__future__ import interpolate
 PETSc.Sys.popErrorHandler()
 import mg
 import argparse
@@ -9,8 +10,8 @@ parser.add_argument('--base_level', type=int, default=1, help='Base refinement l
 parser.add_argument('--ref_level', type=int, default=5, help='Refinement level of icosahedral grid. Default 5.')
 parser.add_argument('--dmax', type=float, default=15, help='Final time in days. Default 15.')
 parser.add_argument('--dumpt', type=float, default=24, help='Dump time in hours. Default 24.')
-parser.add_argument('--gamma', type=float, default=1.0e5, help='Augmented Lagrangian scaling parameter. Default 10000 for AL mode.')
-parser.add_argument('--solver_mode', type=str, default='monolithic', help='Solver strategy. monolithic=use monolithic MG with Schwarz smoothers. AL=use augmented Lagrangian formulation. ALL=use augmented Lagrangian formulation in the preconditioner only. Default = monolithic')
+parser.add_argument('--gamma', type=float, default=0., help='Augmented Lagrangian scaling parameter. Default 0.')
+parser.add_argument('--solver_mode', type=str, default='monolithic', help='Solver strategy. monolithic=use monolithic MG with Schwarz smoothers. AL=use augmented Lagrangian formulation. block=use Hdiv-style block preconditioner (requires gamma>1). Default = monolithic')
 parser.add_argument('--dt', type=float, default=1, help='Timestep in hours. Default 1.')
 parser.add_argument('--filename', type=str, default='w5aug')
 parser.add_argument('--coords_degree', type=int, default=1, help='Degree of polynomials for sphere mesh approximation.')
@@ -43,10 +44,10 @@ def high_order_mesh_hierarchy(mh, degree, R0):
     meshes = []
     for m in mh:
         X = fd.VectorFunctionSpace(m, "Lagrange", degree)
-        new_coords = fd.interpolate(m.coordinates, X)
+        new_coords = fd.assemble(fd.interpolate(m.coordinates, X))
         x, y, z = new_coords
         r = (x**2 + y**2 + z**2)**0.5
-        new_coords.interpolate(R0*new_coords/r)
+        new_coords = fd.assemble(fd.interpolate(R0*new_coords/r, X))
         new_mesh = fd.Mesh(new_coords)
         meshes.append(new_mesh)
 
@@ -100,12 +101,8 @@ f = 2*Omega*cz/fd.Constant(R0)  # Coriolis parameter
 g = fd.Constant(9.8)  # Gravitational constant
 b = fd.Function(V2, name="Topography")
 c = fd.sqrt(g*H)
-if args.solver_mode == "AL":
-    gamma0 = args.gamma
-    gamma = fd.Constant(gamma0)
-else:
-    gamma0 = 0.
-    gamma = fd.Constant(gamma0)
+gamma0 = args.gamma
+gamma = fd.Constant(gamma0)
 
 # D = eta + b
 
@@ -198,61 +195,40 @@ else:
 # Df(x^k).xp = -f(x^k)
 # x^{k+1} = x^k + xp.
 
-# PC transforming to AL form and using approximate Schur complement
+# PC transforming to AL form
 class ALPC(fd.PCBase):
     def initialize(self, pc):
         if pc.getType() != "python":
             raise ValueError("Expecting PC type python")
         prefix = pc.getOptionsPrefix() + "al_"
-
-        # we want to divide the height part by the mass,
-        # apply 
-        mm_solve_parameters = {
-            'ksp_type':'preonly',
-            'pc_type':'bjacobi',
-            'sub_pc_type':'lu',
-        }
-
-        # we assume P has things stuffed inside of it
-        _, P = pc.getOperators()
-        context = P.getPythonContext()
-        appctx = context.appctx
-        self.appctx = appctx
-
-        # FunctionSpace checks
-        u, v = context.a.arguments()
-        if u.function_space() != v.function_space():
-            raise ValueError("Pressure space test and trial space differ")
-
-        # the mass solve
-        a = u*v*fd.dx
-        self.Msolver = fd.LinearSolver(fd.assemble(a),
-                                       solver_parameters=
-                                       mm_solve_parameters)
-        # the Helmholtz solve
-        eta0 = appctx.get("helmholtz_eta", 20)
-        def get_laplace(q,phi):
-            h = fd.avg(fd.CellVolume(mesh))/fd.FacetArea(mesh)
-            mu = eta0/h
-            n = fd.FacetNormal(mesh)
-            ad = (- fd.jump(phi)*fd.jump(fd.inner(fd.grad(q),n))
-                  - fd.jump(q)*fd.jump(fd.inner(fd.grad(phi),n)))*fd.dS
-            ad +=  mu * fd.jump(phi)*fd.jump(q)*fd.dS
-            ad += fd.inner(fd.grad(q), fd.grad(phi)) * fd.dx
-            return ad
-
-        a = (fd.Constant(2)/dT/H)*u*v*fd.dx + fd.Constant(0.5)*g*dT*get_laplace(u, v)
+        PETSc.Sys.Print("prefix "+prefix)
+        
         #input and output functions
-        V = u.function_space()
-        self.xfstar = fd.Function(V) # the input residual
-        self.xf = fd.Function(V) # the output function from Riesz map
-        self.yf = fd.Function(V) # the preconditioned residual
+        self.xfstar = fd.Cofunction(W.dual()) # the input residual
+        self.xf = fd.Function(W) # the Riesz mapped residual
+        self.yf = fd.Function(W) # the preconditioned residual
+        v, q = fd.TestFunctions(W)
+        
+        J = fd.derivative(eqn, Unp1)
+        xf_u, xf_p = fd.split(self.xf)
+        inner = fd.inner; dx = fd.dx; div = fd.div
+        L = inner(xf_u, v)*dx + q*xf_p*dx
+        L += gamma*div(v)*xf_p*dx
 
-        L = get_laplace(u, self.xf*gamma)
-        hh_prob = fd.LinearVariationalProblem(a, L, self.yf)
-        self.hh_solver = fd.LinearVariationalSolver(
-            hh_prob,
-            options_prefix=prefix)
+        prob = fd.LinearVariationalProblem(J, L, self.yf)
+
+        sp = {
+            #"ksp_view": None,
+            "ksp_type": "preonly",
+            "pc_type": "fieldsplit",
+            "pc_fieldsplit_type": "multiplicative",
+            "fieldsplit_0": fieldsplit0,
+            "fieldsplit_1": fieldsplit1
+        }
+        
+        self.solver = fd.LinearVariationalSolver(prob,
+                                                 solver_parameters=sp)
+        #options_prefix=prefix)
 
     def update(self, pc):
         pass
@@ -265,19 +241,9 @@ class ALPC(fd.PCBase):
         # copy petsc vec into Function
         with self.xfstar.dat.vec_wo as v:
             x.copy(v)
-        
+        self.xf.assign(self.xfstar.riesz_representation())
         #do the mass solver, solve(x, b)
-        self.Msolver.solve(self.xf, self.xfstar)
-
-        # get the mean
-        xbar = fd.assemble(self.xf*fd.dx)/fd.assemble(One*fd.dx)
-        self.xf -= xbar
-        
-        #do the Helmholtz solver
-        self.hh_solver.solve()
-
-        # add the mean
-        self.yf += xbar/2*dT*gamma*H
+        self.solver.solve()
         
         # copy petsc vec into Function
         with self.yf.dat.vec_ro as v:
@@ -434,16 +400,78 @@ elif args.solver_mode == 'monolithic':
         "mg_coarse_assembled_pc_type": "lu",
         "mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
     }
+
+elif args.solver_mode == 'block':
+    # block diagonal solver options
+
+    fieldsplit0 = {
+        "ksp_type": "preonly",
+        "pc_type": "lu",
+        #"pc_factor_mat_solver_type": "mumps",
+    }
+    fieldsplit1 = {
+        "ksp_type": "preonly",
+        #"pc_type": "lu",
+        #"pc_type": "jacobi",
+        "pc_type": "python",
+        "pc_python_type": "firedrake.ASMStarPC",
+        "pc_star_construct_dim": 2
+    }
+    
+    sparameters = {
+        "snes_monitor": None,
+        "snes_lag_jacobian": -2,
+        "snes_lag_jacobian_persists": "true",
+        "ksp_type": "gmres",
+        #"ksp_monitor": None,
+        "ksp_converged_reason": None,
+        #"ksp_view": None,
+        "ksp_atol": 1e-50,
+        #"ksp_ew": None,
+        #"ksp_ew_version": 1,
+        #"ksp_ew_threshold": 1e-10,
+        #"ksp_ew_rtol0": 1e-3,
+        "ksp_rtol": 1e-12,
+        "ksp_max_it": 400,
+        "pc_type": "fieldsplit",
+        "pc_fieldsplit_off_diag_use_amat": None,
+        "fieldsplit_0": fieldsplit0,
+        "fieldsplit_1": fieldsplit1
+    }
     
 dt = 60*60*args.dt
 dT.assign(dt)
 t = 0.
 
-nprob = fd.NonlinearVariationalProblem(eqn, Unp1)
-ctx = {"mu": gamma*2/g/dt}
-nsolver = fd.NonlinearVariationalSolver(nprob,
-                                        solver_parameters=sparameters,
-                                        appctx=ctx)
+
+if args.solver_mode == "block":
+    u, eta = fd.TrialFunctions(W)
+    v, phi = fd.TestFunctions(W)
+    div = fd.div; dx = fd.dx; inner = fd.inner
+
+    use_riesz = False
+    if use_riesz:
+        half = fd.Constant(0.5)
+        aP = (
+            inner(u, v) + dT**2*half**2*g*H*div(v)*div(u)
+            + eta*phi
+        )*dx
+    else:
+        aP = fd.derivative(eqn, Unp1)
+        aP += (
+            dT**2*g*H*div(v)*div(u)*fd.Constant(1/4.)
+        )*dx
+
+    nprob = fd.NonlinearVariationalProblem(testeqn, Unp1, Jp=aP)
+    nsolver = fd.NonlinearVariationalSolver(nprob,
+                                            solver_parameters=sparameters)
+else:
+    nprob = fd.NonlinearVariationalProblem(eqn, Unp1)
+    ctx = {"mu": gamma*2/g/dt}
+    nsolver = fd.NonlinearVariationalSolver(nprob,
+                                            solver_parameters=sparameters,
+                                            appctx=ctx)
+
 vtransfer = mg.ManifoldTransfer()
 tm = fd.TransferManager()
 transfers = {
@@ -472,7 +500,7 @@ etan = fd.Function(V2, name="Elevation").project(eta_expr)
 
 # Topography.
 rl = fd.pi/9.0
-lambda_x = fd.atan_2(x[1]/R0, x[0]/R0)
+lambda_x = fd.atan2(x[1]/R0, x[0]/R0)
 lambda_c = -fd.pi/2.0
 phi_x = fd.asin(x[2]/R0)
 phi_c = fd.pi/6.0
@@ -481,7 +509,7 @@ minarg = fd.min_value(pow(rl, 2),
 bexpr = 2000.0*(1 - fd.sqrt(minarg)/rl)
 b.interpolate(bexpr)
 
-u0, h0 = Un.split()
+u0, h0 = Un.subfunctions
 u0.assign(un)
 h0.assign(etan + H - b)
 
@@ -510,8 +538,7 @@ while t < tmax + 0.5*dt:
     t += dt
     tdump += dt
 
-    with PETSc.Lgo.Event("nsolver"):
-        nsolver.solve()
+    nsolver.solve()
     Un.assign(Unp1)
     
     if tdump > dumpt - dt*0.5:

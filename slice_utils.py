@@ -61,16 +61,32 @@ def hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary,
     
     PiProblem = fd.LinearVariationalProblem(Pieqn, L, wh, bcs=bcs)
         
-    lu_params = {
+    my_params = {
         'snes_monitor': None,
         'snes_stol': 1.0e-50,
         'snes_rtol': 1.0e-6,
         'snes_atol': 1.0e-6,
         'ksp_monitor': None,
+        #'ksp_view': None,
         'snes_converged_reason': None,
-        'mat_type': 'aij',
-        'pc_type': 'lu',
-        "pc_factor_mat_ordering_type": "rcm",
+        'pc_type': "python",
+        'pc_python_type': 'firedrake.ASMStarPC',
+        'pc_star_construct_codim': 0,
+        #'pc_star_sub_sub' : {'pc_type': 'lu',
+        #                     'pc_factor_mat_solver_type': 'mumps'},
+        'pc_star_sub_sub' : {
+            "pc_type": "fieldsplit",
+            "pc_fieldsplit_type":"schur",
+            "pc_fieldsplit_schur_fact_type":"full",
+            "fieldsplit_detect_saddle_point": None,
+            "pc_fieldsplit_schur_precondition":"selfp",
+            "fieldsplit_Pressure_mat_schur_complement_ainv_type":"full",
+            "fieldsplit_Pressure_ksp_type":'preonly',
+            "fieldsplit_Pressure_pc_type":"lu",
+            "fieldsplit_Vv_ksp_type":"preonly",
+            "fieldsplit_Vv_pc_type":"lu",
+            "pc_factor_mat_solver_type": "mumps",
+            }
     }
 
     PiSolver = fd.LinearVariationalSolver(PiProblem,
