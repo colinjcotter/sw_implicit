@@ -246,12 +246,11 @@ def both(u):
     return 2*fd.avg(u)
 
 def u_tendency(w, n, u, theta, rho,
-               cp, g, R_d, p_0, kappa, Up,
+               Pi, cp, g, Up,
                mu=None, f=None, F=None):
     """
     Written in a dimension agnostic way
     """
-    Pi = pi_formula(rho, theta, R_d, p_0, kappa)
     mesh = u.ufl_domain()
     K = fd.Constant(0.5, domain=mesh)*fd.inner(u, u)
     Upwind = 0.5*(fd.sign(fd.dot(u, n))+1)
@@ -296,11 +295,11 @@ def get_form_function(n, Up, c_pen,
     def form_function(u, rho, theta, du, drho, dtheta):
         eqn = theta_tendency(dtheta, u, theta, n, Up, c_pen)
         eqn += rho_tendency(drho, rho, u, n)
-
-        eqn += u_tendency(du, n, u, theta, rho,
-                          cp, g, R_d, p_0, kappa, Up, mu, f, F)
+        Pi = pi_formula(rho, theta, R_d, p_0, kappa)
+        eqn += u_tendency(w=du, n=n, u=u, theta=theta, rho=rho,
+                          Pi=Pi, cp=cp, g=g, Up=Up, mu=mu,
+                          f=f, F=F)
         if Eady:
-            Pi = pi_formula(rho, theta, R_d, p_0, kappa)
             eqn += eady_terms_u(du, theta, rho, cp, Pi, Eady)
             eqn += eady_terms_theta(dtheta, u, Eady)
         return eqn

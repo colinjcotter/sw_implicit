@@ -26,8 +26,6 @@ cp = fd.Constant(1004.5)  # SHC of dry air at const. pressure (J/kg/K)
 R_d = fd.Constant(287.)  # Gas constant for dry air (J/kg/K)
 kappa = fd.Constant(2.0/7.0)  # R_d/c_p
 p_0 = fd.Constant(1000.0*100.0)  # reference pressure (Pa, not hPa)
-cv = fd.Constant(717.)  # SHC of dry air at const. volume (J/kg/K)
-T_0 = fd.Constant(273.15)  # ref. temperature
 
 # build volume mesh
 mesh = fd.ExtrudedMesh(m, layers=nlayers, layer_height=H/nlayers)
@@ -70,10 +68,9 @@ x, y, z = fd.SpatialCoordinate(mesh)
 # so theta_z = theta*g/T/cp
 # i.e. theta = theta_0 exp(g*z/T/cp)
 Tsurf = fd.Constant(300.)
-Nsq = fd.Constant(np.sqrt(2.5e-05))
+Nsq = 2.5e-5
 thetab = Tsurf*fd.exp(N**2*z/g)
 
-cp = fd.Constant(1004.5)  # SHC of dry air at const. pressure (J/kg/K)
 Up = fd.as_vector([fd.Constant(0.0),
                    fd.Constant(0.0),
                    fd.Constant(1.0)]) # up direction
@@ -99,11 +96,16 @@ Bu = 0.5
 theta_exp = a*Tsurf/g*fd.sqrt(Nsq)*(-(1.-Bu*0.5*coth(Bu*0.5))
                                  *fd.sinh(Z(z))*fd.cos(fd.pi*(x-L)/L)
                                  - n()*Bu*fd.cosh(Z(z))*fd.sin(fd.pi*(x-L)/L))
-theta_pert = fd.Function(Vt).interpolate(theta_exp)
 
 # set theta0
-thetan.interpolate(thetab + theta_pert)
+thetan.interpolate(thetab)
 
+Pi_ref = fd.Function(V2)
+hydrostatic_rho(Vv, V2, mesh, thetan, rhon=rhon, pi_boundary=fd.Constant(1),
+                    cp=cp, R_d=R_d, p_0=p_0, kappa=kappa, g=g, Up=Up,
+                    top=False, Pi=Pi_ref)
+
+thetan.interpolate(thetab + theta_exp)
 Pi = fd.Function(V2)
 hydrostatic_rho(Vv, V2, mesh, thetan, rhon=rhon, pi_boundary=fd.Constant(1),
                     cp=cp, R_d=R_d, p_0=p_0, kappa=kappa, g=g, Up=Up,
@@ -111,7 +113,7 @@ hydrostatic_rho(Vv, V2, mesh, thetan, rhon=rhon, pi_boundary=fd.Constant(1),
 rho_back = fd.Function(V2).assign(rhon)
 
 sparameters = {
-    "snes_converged_reason": None,
+    "snes_converged_reason": None,    
     "mat_type": "matfree",
     "ksp_type": "gmres",
     "snes_monitor": None,
@@ -127,14 +129,14 @@ sparameters = {
     "assembled_pc_star_sub_sub_pc_factor_mat_ordering_type": "rcm"
 }
 
-Pi0_value = fd.assemble(Pi*fd.dx) / fd.assemble(
+Pi0_value = fd.assemble(Pi_ref*fd.dx) / fd.assemble(
     fd.Constant(1.0)*fd.dx(domain=mesh))
 Pi0 = fd.Constant(Pi0_value)
 
 # set x-cpt of velocity
 dbdy = -1.0e-07
 dthetady = Tsurf/g*dbdy
-u = cp*dthetady/f*(Pi-Pi0)
+u = cp*dthetady/f*(Pi_ref-Pi0)
 
 # get Pi gradient
 tg = fd.TrialFunction(V1)
@@ -166,7 +168,7 @@ un, rhon, thetan = fd.split(Un)
 unp1, rhonp1, thetanp1 = fd.split(Unp1)
 
 du, drho, dtheta = fd.TestFunctions(W)
-f = fd.Constant(1.0e-4)
+f = fd.Constant(f)
 
 eqn = slice_imr_form(un, unp1, rhon, rhonp1, thetan, thetanp1,
                      du, drho, dtheta,
