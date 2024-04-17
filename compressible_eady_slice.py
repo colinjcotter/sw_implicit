@@ -6,8 +6,8 @@ import numpy as np
 
 dT = fd.Constant(1)
 
-nlayers = 100  # horizontal layers 50./100 = 0.5 = 2*250
-base_columns = 60  # number of columns 240000/60 = 4000 = 2*2000
+nlayers = 20
+base_columns = 60
 L = 240e3
 distribution_parameters = {"partition": True, "overlap_type": (fd.DistributedMeshOverlapType.VERTEX, 2)}
 
@@ -118,8 +118,8 @@ sparameters = {
     "ksp_type": "gmres",
     "snes_monitor": None,
     "ksp_converged_reason": None,
-    "ksp_atol": 1e-8,
-    "ksp_rtol": 1e-8,
+    "ksp_atol": 1e-50,
+    "ksp_rtol": 1e-6,
     "ksp_max_it": 400,
     "pc_type": "python",
     "pc_python_type": "firedrake.AssembledPC",
