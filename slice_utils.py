@@ -53,7 +53,7 @@ def hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary,
 
     zeros = []
     for i in range(Up.ufl_shape[0]):
-        zeros.append(fd.Constant(0., domain=mesh))
+        zeros.append(fd.Constant(0.))
         
     L = -cp*fd.inner(dv, n)*thetan*pi_boundary*bmeasure
     L -= g*fd.inner(dv, Up)*fd.dx
@@ -69,9 +69,8 @@ def hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary,
         'ksp_monitor': None,
         'snes_converged_reason': None,
         'pc_type': "lu",
-        'pc_factor_mat_solver_package':'mumps'
+        'pc_factor_mat_solver_type':'mumps'
     }
-
     PiSolver = fd.LinearVariationalSolver(PiProblem,
                                           solver_parameters=my_params,
                                           options_prefix="pisolver")
@@ -90,7 +89,7 @@ def hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary,
         Pif = pi_formula(rho, thetan, R_d, p_0, kappa)
         
         rhoeqn = (
-            (cp*fd.inner(v, dv) - cp*fd.div(dv*thetan)*Pif)*fd.dx
+            cp*fd.inner(v, dv)*fd.dx - cp*fd.div(dv*thetan)*Pif*fd.dx(degree=4)
             + cp*drho*fd.div(thetan*v)*fd.dx
         )
 
@@ -105,7 +104,7 @@ def hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary,
 
         zeros = []
         for i in range(Up.ufl_shape[0]):
-            zeros.append(fd.Constant(0., domain=mesh))
+            zeros.append(fd.Constant(0.))
 
         rhoeqn += cp*fd.inner(dv, n)*thetan*pi_boundary*bmeasure
         rhoeqn += g*fd.inner(dv, Up)*fd.dx
@@ -252,24 +251,28 @@ def u_tendency(w, n, u, theta, rho,
     Written in a dimension agnostic way
     """
     mesh = u.ufl_domain()
-    K = fd.Constant(0.5, domain=mesh)*fd.inner(u, u)
+    K = fd.Constant(0.5)*fd.inner(u, u)
     Upwind = 0.5*(fd.sign(fd.dot(u, n))+1)
-    
+
+    dS = fd.dS_h(degree=4) + fd.dS_v(degree=4)
     eqn = (
         + fd.inner(u, curl0(cross1(u, w)))*fd.dx
         - fd.inner(both(Upwind*u),
-                      both(cross0(n, cross1(u, w))))*(fd.dS_h + fd.dS_v)
+                      both(cross0(n, cross1(u, w))))*dS
         - fd.div(w)*K*fd.dx
-        - cp*fd.div(theta*w)*Pi*fd.dx
-        + cp*fd.jump(w*theta, n)*fd.avg(Pi)*fd.dS_v
+        - cp*fd.div(theta*w)*Pi*fd.dx(degree=4)
+        + cp*fd.jump(w*theta, n)*fd.avg(Pi)*fd.dS_v(degree=4)
          + fd.inner(w, Up)*g*fd.dx
         )
 
     if mu: # Newtonian dissipation in vertical
+        PETSc.Sys.Print("added Newtonian dissipation")
         eqn += mu*fd.inner(w, Up)*fd.inner(u, Up)*fd.dx
     if f: # Coriolis term
+        PETSc.Sys.Print("added Coriolis")
         eqn += f*fd.inner(w, fd.cross(Up, u))*fd.dx
     if F: # additional source term
+        PETSc.Sys.Print("added F")
         eqn += fd.inner(w, F)*fd.dx
     return eqn
 
@@ -282,7 +285,7 @@ def eady_terms_u(du, theta, rho, cp, Pi, Eady):
     s = Eady["dthetady"]
     Pi0 = Eady["Pi0"]
     y_vec = fd.as_vector([0., 1., 0.])
-    return -cp*s*(Pi - Pi0)*fd.inner(du, y_vec)*fd.dx
+    return -cp*s*(Pi - Pi0)*fd.inner(du, y_vec)*fd.dx(degree=4)
 
 def eady_terms_theta(dtheta, u, Eady):
     s = Eady["dthetady"]
@@ -300,6 +303,7 @@ def get_form_function(n, Up, c_pen,
                           Pi=Pi, cp=cp, g=g, Up=Up, mu=mu,
                           f=f, F=F)
         if Eady:
+            PETSc.Sys.Print("added Eady terms")
             eqn += eady_terms_u(du, theta, rho, cp, Pi, Eady)
             eqn += eady_terms_theta(dtheta, u, Eady)
         return eqn
@@ -308,7 +312,7 @@ def get_form_function(n, Up, c_pen,
 def form_viscosity(u, v, kappa, mu = None):
     mesh = v.ufl_domain()
     if not mu:
-        mu = fd.Constant(10.0, domain=mesh)
+        mu = fd.Constant(10.0)
     n = fd.FacetNormal(mesh)
     a = fd.inner(fd.grad(u), fd.grad(v))*fd.dx
     h = fd.avg(fd.CellVolume(mesh))/fd.FacetArea(mesh)
@@ -316,7 +320,7 @@ def form_viscosity(u, v, kappa, mu = None):
         fluxes = (-fd.inner(2*fd.avg(fd.outer(v, n)), fd.avg(fd.grad(u)))
                   - fd.inner(fd.avg(fd.grad(v)), 2*fd.avg(fd.outer(u, n)))
                   + mu/h*fd.inner(2*fd.avg(fd.outer(v, n)),
-                               2*fd.avg(fd.outer(u, n))))*dS
+                               2*fd.avg(fd.outer(u, n))))*dS(degree=4)
         return fluxes
 
     a += kappa*get_flux_form(fd.dS_v)
@@ -337,9 +341,9 @@ def slice_imr_form(un, unp1, rhon, rhonp1, thetan, thetanp1,
     mesh = un.ufl_domain()
     eqn = form_mass(unp1, rhonp1, thetanp1, du, drho, dtheta)
     eqn -= form_mass(un, rhon, thetan, du, drho, dtheta)
-    unph = fd.Constant(0.5, domain=mesh)*(un + unp1)
-    rhonph = fd.Constant(0.5, domain=mesh)*(rhon + rhonp1)
-    thetanph = fd.Constant(0.5, domain=mesh)*(thetan + thetanp1)
+    unph = fd.Constant(0.5)*(un + unp1)
+    rhonph = fd.Constant(0.5)*(rhon + rhonp1)
+    thetanph = fd.Constant(0.5)*(thetan + thetanp1)
     eqn += dT*form_function(unph, rhonph, thetanph,
                             du, drho, dtheta)
 

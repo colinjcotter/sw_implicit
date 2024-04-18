@@ -21,7 +21,6 @@ m = fd.PeriodicRectangleMesh(base_columns, ny=1, Lx=2*L, Ly=1.0e-3*L,
                              distribution_parameters=distribution_parameters)
 
 g = fd.Constant(9.810616)
-N = fd.Constant(0.01)  # Brunt-Vaisala frequency (1/s)
 cp = fd.Constant(1004.5)  # SHC of dry air at const. pressure (J/kg/K)
 R_d = fd.Constant(287.)  # Gas constant for dry air (J/kg/K)
 kappa = fd.Constant(2.0/7.0)  # R_d/c_p
@@ -68,14 +67,14 @@ x, y, z = fd.SpatialCoordinate(mesh)
 # so theta_z = theta*g/T/cp
 # i.e. theta = theta_0 exp(g*z/T/cp)
 Tsurf = fd.Constant(300.)
-Nsq = 2.5e-5
-thetab = Tsurf*fd.exp(N**2*z/g)
+Nsq = fd.Constant(2.5e-05)
+thetab = Tsurf*fd.exp(Nsq*(z-H/2)/g)
 
 Up = fd.as_vector([fd.Constant(0.0),
                    fd.Constant(0.0),
                    fd.Constant(1.0)]) # up direction
 
-un, rhon, thetan = Un.split()
+un, rhon, thetan = Un.subfunctions
 thetan.interpolate(thetab)
 theta_back = fd.Function(Vt).assign(thetan)
 
@@ -104,13 +103,12 @@ Pi_ref = fd.Function(V2)
 hydrostatic_rho(Vv, V2, mesh, thetan, rhon=rhon, pi_boundary=fd.Constant(1),
                     cp=cp, R_d=R_d, p_0=p_0, kappa=kappa, g=g, Up=Up,
                     top=False, Pi=Pi_ref)
-
+rho_back = fd.Function(V2).assign(rhon)
 thetan.interpolate(thetab + theta_exp)
 Pi = fd.Function(V2)
 hydrostatic_rho(Vv, V2, mesh, thetan, rhon=rhon, pi_boundary=fd.Constant(1),
                     cp=cp, R_d=R_d, p_0=p_0, kappa=kappa, g=g, Up=Up,
                     top=False, Pi=Pi)
-rho_back = fd.Function(V2).assign(rhon)
 
 sparameters = {
     "snes_converged_reason": None,    
@@ -186,7 +184,7 @@ nsolver = fd.NonlinearVariationalSolver(nprob, solver_parameters=sparameters,
 
 name = 'eady_comp'
 file_eady = fd.File(name+'.pvd')
-un, rhon, thetan = Un.split()
+un, rhon, thetan = Un.subfunctions
 delta_theta = fd.Function(Vt, name="delta theta").assign(thetan-theta_back)
 delta_rho = fd.Function(V2, name="delta rho").assign(rhon-rho_back)
 
