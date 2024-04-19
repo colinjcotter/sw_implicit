@@ -2,6 +2,7 @@ import firedrake as fd
 from petsc4py import PETSc
 from slice_utils import hydrostatic_rho, pi_formula,\
     slice_imr_form, both, maximum, minimum
+from firedrake.output import VTKFile
 import numpy as np
 
 dT = fd.Constant(1)
@@ -53,7 +54,22 @@ V2 = fd.FunctionSpace(mesh, V3_elt, name="Pressure")
 Vt = fd.FunctionSpace(mesh, V2t_elt, name="Temperature")
 Vv = fd.FunctionSpace(mesh, V2v_elt, name="Vv")
 
-W = V1 * V2 * Vt #velocity, density, temperature
+ordering = "original"
+
+# order is based on the original order V1 * V2 * Vt
+# it gives the order to recover original order
+if ordering == "tup":
+    W = Vt * V1 * V2  #velocity, density, temperature
+    order = (1, 2, 0)
+if ordering == "put":
+    W = V2 * V1 * Vt
+    order = (1, 0, 2)
+if ordering == "ptu":
+    W = V2 * Vt * V1
+    order = (2, 0, 1)
+else:
+    W = V1 * V2 * Vt
+    order = (0,1,2)
 
 Un = fd.Function(W)
 Unp1 = fd.Function(W)
@@ -74,7 +90,8 @@ Up = fd.as_vector([fd.Constant(0.0),
                    fd.Constant(0.0),
                    fd.Constant(1.0)]) # up direction
 
-un, rhon, thetan = Un.subfunctions
+Uns = Un.subfunctions
+un, rhon, thetan = tuple(Uns[i] for i in order)
 thetan.interpolate(thetab)
 theta_back = fd.Function(Vt).assign(thetan)
 
@@ -111,18 +128,25 @@ hydrostatic_rho(Vv, V2, mesh, thetan, rhon=rhon, pi_boundary=fd.Constant(1),
                     top=False, Pi=Pi)
 
 sparameters = {
-    "snes_converged_reason": None,    
+    "snes_converged_reason": None,
+    "snes_lag_jacobian" : -2,
+    "snes_lag_jacobian_persists" : None,
+    "snes_lag_preconditioner" : -2,
     "mat_type": "matfree",
     "ksp_type": "gmres",
     "snes_monitor": None,
     "ksp_converged_reason": None,
     "ksp_atol": 1e-50,
     "ksp_rtol": 1e-6,
+    #"ksp_view": None,
     "ksp_max_it": 400,
     "pc_type": "python",
     "pc_python_type": "firedrake.AssembledPC",
     "assembled_pc_type": "python",
     "assembled_pc_python_type": "firedrake.ASMStarPC",
+    "assembled_pc_star_sub_sub_pc_type": "ilu",
+    "assembled_pc_star_sub_sub_ksp_type": "preonly",
+    "assembled_pc_star_sub_sub_ksp_type": "preonly",
     "assembled_pc_star_construct_dim": 0,
     "assembled_pc_star_sub_sub_pc_factor_mat_ordering_type": "rcm"
 }
@@ -162,10 +186,15 @@ u_exp = fd.as_vector([u, v, 0.])
 un.project(u_exp)
 
 #The timestepping solver
-un, rhon, thetan = fd.split(Un)
-unp1, rhonp1, thetanp1 = fd.split(Unp1)
+Uns = fd.split(Un)
+un, rhon, thetan = tuple(Uns[i] for i in order)
 
-du, drho, dtheta = fd.TestFunctions(W)
+Uns = fd.split(Unp1)
+unp1, rhonp1, thetanp1 = tuple(Uns[i] for i in order)
+
+Uns = fd.TestFunctions(W)
+du, drho, dtheta = tuple(Uns[i] for i in order)
+
 f = fd.Constant(f)
 
 eqn = slice_imr_form(un, unp1, rhon, rhonp1, thetan, thetanp1,
@@ -183,8 +212,10 @@ nsolver = fd.NonlinearVariationalSolver(nprob, solver_parameters=sparameters,
                                         options_prefix="nsolver")
 
 name = 'eady_comp'
-file_eady = fd.File(name+'.pvd')
-un, rhon, thetan = Un.subfunctions
+file_eady = VTKFile(name+'.pvd')
+Uns = Un.subfunctions
+un, rhon, thetan = tuple(Uns[i] for i in order)
+
 delta_theta = fd.Function(Vt, name="delta theta").assign(thetan-theta_back)
 delta_rho = fd.Function(V2, name="delta rho").assign(rhon-rho_back)
 
@@ -213,7 +244,8 @@ Unp1.assign(Un)
 t = 0.
 day = 60*60*24
 tdump = 0.
-tmax = 30*day #  30*day
+tmax = 50*dt
+#tmax = 30*day #  30*day
 dumpt = 0.25*day
 
 itcount = 0
