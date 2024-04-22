@@ -11,7 +11,7 @@ parser.add_argument('--ref_level', type=int, default=5, help='Refinement level o
 parser.add_argument('--dmax', type=float, default=15, help='Final time in days. Default 15.')
 parser.add_argument('--dumpt', type=float, default=24, help='Dump time in hours. Default 24.')
 parser.add_argument('--gamma', type=float, default=0., help='Augmented Lagrangian scaling parameter. Default 0.')
-parser.add_argument('--solver_mode', type=str, default='monolithic', help='Solver strategy. monolithic=use monolithic MG with Schwarz smoothers. AL=use augmented Lagrangian formulation. block=use Hdiv-style block preconditioner (requires gamma>1). Default = monolithic')
+parser.add_argument('--solver_mode', type=str, default='monolithic', help='Solver strategy. monolithic=use monolithic MG with Schwarz smoothers. AL=use augmented Lagrangian formulation. block=use Hdiv-style block preconditioner (requires gamma>1). splitdirect=multiplicative composition of patch and direct solve on linear SWE. Default = monolithic')
 parser.add_argument('--dt', type=float, default=1, help='Timestep in hours. Default 1.')
 parser.add_argument('--filename', type=str, default='w5aug')
 parser.add_argument('--coords_degree', type=int, default=1, help='Degree of polynomials for sphere mesh approximation.')
@@ -438,6 +438,67 @@ elif args.solver_mode == 'block':
         "fieldsplit_0": fieldsplit0,
         "fieldsplit_1": fieldsplit1
     }
+elif args.solver_mode == 'splitdirect':
+
+    patch = {
+        "ksp_type": "richardson",
+        "ksp_richardson_scale": 0.5,
+        "ksp_maxit": 1,
+        "pc_type": "python",
+        "pc_python_type": "firedrake.PatchPC",
+        "patch_pc_patch_save_operators": True,
+        "patch_pc_patch_partition_of_unity": True,
+        "patch_pc_patch_sub_mat_type": "seqdense",
+        "patch_pc_patch_construct_dim": 0,
+        "patch_pc_patch_construct_type": "star",
+        "patch_pc_patch_local_type": "additive",
+        "patch_pc_patch_precompute_element_tensors": True,
+        "patch_pc_patch_symmetrise_sweep": False,
+        "patch_sub_ksp_type": "preonly",
+        "patch_sub_pc_type": "lu",
+        "patch_sub_pc_factor_shift_type": "nonzero"
+    }
+
+
+    class HelmholtzPC(fd.AuxiliaryOperatorPC):
+    
+        def form(self, pc, test, trial):
+            u, p = fd.split(trial)
+            v, q = fd.split(test)
+            inner = fd.inner; div = fd.div
+            a = (
+                fd.inner(u, v) + 0.5*dT*inner(v, f*perp(u))
+                - 0.5*g*dT*div(v)*p
+                + 0.5*H*dT*div(u)*q
+            )*fd.dx
+            #Returning None as bcs
+            return (a, None)
+
+    helmholtz = {
+        "pc_python_type": "__main__.HelmholtzPC",
+        "aux_pc_type": "lu",
+        "aux_pc_factor_mat_solver_type": "mumps"
+    }
+
+    sparameters = {
+        "snes_monitor": None,
+        #"snes_lag_jacobian": -2,
+        #"snes_lag_jacobian_persists": None,
+        "ksp_type": "gmres",
+        #"ksp_monitor": None,
+        "ksp_converged_reason": None,
+        #"ksp_view": None,
+        "ksp_atol": 1e-50,
+        "ksp_rtol": 1e-12,
+        "ksp_max_it": 400,
+        "pc_type": "composite",
+        "pc_composite_type": "multiplicative",
+        "pc_composite_pcs": "ksp,python",
+        "sub_1": patch,
+        "sub_0": helmholtz,
+    }
+
+    
     
 dt = 60*60*args.dt
 dT.assign(dt)

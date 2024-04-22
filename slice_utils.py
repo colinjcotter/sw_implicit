@@ -246,7 +246,8 @@ def both(u):
 
 def u_tendency(w, n, u, theta, rho,
                Pi, cp, g, Up,
-               mu=None, f=None, F=None):
+               mu=None, f=None, F=None,
+               vector_invariant=True):
     """
     Written in a dimension agnostic way
     """
@@ -256,14 +257,21 @@ def u_tendency(w, n, u, theta, rho,
 
     dS = fd.dS_h(degree=4) + fd.dS_v(degree=4)
     eqn = (
-        + fd.inner(u, curl0(cross1(u, w)))*fd.dx
-        - fd.inner(both(Upwind*u),
-                      both(cross0(n, cross1(u, w))))*dS
-        - fd.div(w)*K*fd.dx
         - cp*fd.div(theta*w)*Pi*fd.dx(degree=4)
         + cp*fd.jump(w*theta, n)*fd.avg(Pi)*fd.dS_v(degree=4)
          + fd.inner(w, Up)*g*fd.dx
         )
+
+    if vector_invariant:
+        eqn += fd.inner(u, curl0(cross1(u, w)))*fd.dx
+        eqn -= fd.inner(both(Upwind*u),
+                       both(cross0(n, cross1(u, w))))*dS
+        eqn -= fd.div(w)*K*fd.dx
+    else:
+        eqn += -fd.inner(fd.div(fd.outer(w, u)), u)*fd.dx
+        un = 0.5*(fd.dot(u, n) + abs(fd.dot(u, n)))
+        eqn += fd.dot(fd.jump(w),
+                      (un('+')*u('+') - un('-')*u('-')))*dS
 
     if mu: # Newtonian dissipation in vertical
         PETSc.Sys.Print("added Newtonian dissipation")
@@ -294,14 +302,15 @@ def eady_terms_theta(dtheta, u, Eady):
 
 def get_form_function(n, Up, c_pen,
                       cp, g, R_d, p_0, kappa, mu,
-                      f=None, F=None, Eady=None):
+                      f=None, F=None, Eady=None,
+                      vector_invariant=True):
     def form_function(u, rho, theta, du, drho, dtheta):
         eqn = theta_tendency(dtheta, u, theta, n, Up, c_pen)
         eqn += rho_tendency(drho, rho, u, n)
         Pi = pi_formula(rho, theta, R_d, p_0, kappa)
         eqn += u_tendency(w=du, n=n, u=u, theta=theta, rho=rho,
                           Pi=Pi, cp=cp, g=g, Up=Up, mu=mu,
-                          f=f, F=F)
+                          f=f, F=F, vector_invariant=vector_invariant)
         if Eady:
             PETSc.Sys.Print("added Eady terms")
             eqn += eady_terms_u(du, theta, rho, cp, Pi, Eady)
@@ -332,12 +341,13 @@ def slice_imr_form(un, unp1, rhon, rhonp1, thetan, thetanp1,
                    dT, n, Up, c_pen,
                    cp, g, R_d, p_0, kappa, mu=None, f=None, F=None,
                    viscosity=None, diffusivity=None,
-                   Eady=None):
+                   Eady=None, vector_invariant=True):
     form_mass = get_form_mass()
     form_function = get_form_function(n, Up, c_pen,
                                       cp, g, R_d, p_0,
                                       kappa, mu, f, F,
-                                      Eady)
+                                      Eady,
+                                      vector_invariant=vector_invariant)
     mesh = un.ufl_domain()
     eqn = form_mass(unp1, rhonp1, thetanp1, du, drho, dtheta)
     eqn -= form_mass(un, rhon, thetan, du, drho, dtheta)

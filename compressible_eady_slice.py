@@ -146,7 +146,6 @@ sparameters = {
     "assembled_pc_python_type": "firedrake.ASMStarPC",
     "assembled_pc_star_sub_sub_pc_type": "ilu",
     "assembled_pc_star_sub_sub_ksp_type": "preonly",
-    "assembled_pc_star_sub_sub_ksp_type": "preonly",
     "assembled_pc_star_construct_dim": 0,
     "assembled_pc_star_sub_sub_pc_factor_mat_ordering_type": "rcm"
 }
@@ -201,7 +200,8 @@ eqn = slice_imr_form(un, unp1, rhon, rhonp1, thetan, thetanp1,
                      du, drho, dtheta,
                      dT=dT, n=n, Up=Up, c_pen=fd.Constant(2.0**(-7./2)),
                      cp=cp, g=g, R_d=R_d, p_0=p_0, kappa=kappa,
-                     f = f, Eady={"Pi0":Pi0, "dthetady":dthetady})
+                     f = f, Eady={"Pi0":Pi0, "dthetady":dthetady},
+                     vector_invariant=False)
 
 bcs = [fd.DirichletBC(W.sub(0), 0., "bottom"),
        fd.DirichletBC(W.sub(0), 0., "top")]
