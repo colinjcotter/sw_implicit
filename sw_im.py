@@ -195,6 +195,21 @@ else:
 # Df(x^k).xp = -f(x^k)
 # x^{k+1} = x^k + xp.
 
+
+# linear shallow water operator
+class HelmholtzPC(fd.AuxiliaryOperatorPC):
+    def form(self, pc, test, trial):
+        u, p = fd.split(trial)
+        v, q = fd.split(test)
+        inner = fd.inner; div = fd.div
+        a = (
+            fd.inner(u, v) + fd.inner(p, q) + 0.5*dT*inner(v, f*perp(u))
+            - 0.5*g*dT*div(v)*p
+            + 0.5*H*dT*div(u)*q
+        )*fd.dx
+        #Returning None as bcs
+        return (a, None)
+
 # PC transforming to AL form
 class ALPC(fd.PCBase):
     def initialize(self, pc):
@@ -441,9 +456,105 @@ elif args.solver_mode == 'block':
 elif args.solver_mode == 'splitdirect':
 
     patch = {
-        "ksp_type": "richardson",
-        "ksp_richardson_scale": 0.5,
-        "ksp_maxit": 1,
+        "pc_python_type": "firedrake.PatchPC",
+        "patch_pc_patch_save_operators": True,
+        "patch_pc_patch_partition_of_unity": True,
+        "patch_pc_patch_sub_mat_type": "seqdense",
+        "patch_pc_patch_construct_dim": 0,
+        "patch_pc_patch_construct_type": "star",
+        "patch_pc_patch_local_type": "additive",
+        "patch_pc_patch_precompute_element_tensors": True,
+        "patch_pc_patch_symmetrise_sweep": False,
+        "patch_sub_ksp_type": "preonly",
+        "patch_sub_pc_type": "lu",
+        "patch_sub_pc_factor_shift_type": "nonzero"
+    }
+
+    helmholtz = {
+        "pc_python_type": f"{__name__}.HelmholtzPC",
+        "aux_pc_type": "lu",
+        "aux_pc_factor_mat_solver_type": "mumps"
+    }
+
+    sparameters = {
+        "snes_monitor": None,
+        "snes_converged_reason": None,
+        "snes_atol": 1e5,
+        # "snes_max_it": 1,
+        # "snes_convergence_test": "skip",
+        #"snes_lag_jacobian": -2,
+        #"snes_lag_jacobian_persists": None,
+        "ksp_monitor": None,
+        "ksp_converged_rate": None,
+        # "ksp_view": None,
+        "ksp_type": "fgmres",
+        "ksp_atol": 1e-50,
+        "ksp_rtol": 1e-3,
+        "ksp_max_it": 30,
+        "pc_type": "python",
+        "pc_type": "composite",
+        "pc_composite_type": "multiplicative",
+        "pc_composite_pcs": "ksp,ksp",
+        "sub_0": {
+            "ksp_ksp_type": "gmres",
+            "ksp_ksp_rtol": 1e-1,
+            "ksp_ksp_max_it": 1,
+            "ksp_ksp_convergence_test": 'skip',
+            "ksp_ksp_converged_maxits": None,
+            # "ksp_ksp_converged_rate": None,
+            "ksp_pc_type": "python",
+            "ksp": helmholtz,
+        },
+        "sub_1": {
+            "ksp_ksp_type": "preonly",
+            "ksp_ksp_rtol": 1e-1,
+            "ksp_ksp_max_it": 1,
+            "ksp_ksp_convergence_test": 'skip',
+            "ksp_ksp_converged_maxits": None,
+            # "ksp_ksp_converged_rate": None,
+            "ksp_pc_type": "python",
+            "ksp": patch,
+        }
+    }
+
+elif args.solver_mode == 'lswe':
+
+    sparameters = {
+        "snes_monitor": None,
+        "snes_converged_reason": None,
+        "snes_atol": 1e5,
+        # "snes_max_it": 1,
+        # "snes_convergence_test": "skip",
+        #"snes_lag_jacobian": -2,
+        #"snes_lag_jacobian_persists": None,
+        "ksp_monitor": None,
+        "ksp_converged_rate": None,
+        # "ksp_view": None,
+        "ksp_type": "gmres",
+        "ksp_rtol": 1e-3,
+        "ksp_max_it": 30,
+        "pc_type": "python",
+        "pc_python_type": f"{__name__}.HelmholtzPC",
+        "aux_pc_type": "lu",
+        "aux_pc_factor_mat_solver_type": "mumps"
+    }
+
+elif args.solver_mode == 'patch':
+
+    sparameters = {
+        "snes_monitor": None,
+        "snes_converged_reason": None,
+        "snes_atol": 1e5,
+        # "snes_max_it": 1,
+        # "snes_convergence_test": "skip",
+        #"snes_lag_jacobian": -2,
+        #"snes_lag_jacobian_persists": None,
+        "ksp_monitor": None,
+        "ksp_converged_rate": None,
+        # "ksp_view": None,
+        "ksp_type": "gmres",
+        "ksp_rtol": 1e-3,
+        "ksp_max_it": 30,
         "pc_type": "python",
         "pc_python_type": "firedrake.PatchPC",
         "patch_pc_patch_save_operators": True,
@@ -460,45 +571,6 @@ elif args.solver_mode == 'splitdirect':
     }
 
 
-    class HelmholtzPC(fd.AuxiliaryOperatorPC):
-    
-        def form(self, pc, test, trial):
-            u, p = fd.split(trial)
-            v, q = fd.split(test)
-            inner = fd.inner; div = fd.div
-            a = (
-                fd.inner(u, v) + 0.5*dT*inner(v, f*perp(u))
-                - 0.5*g*dT*div(v)*p
-                + 0.5*H*dT*div(u)*q
-            )*fd.dx
-            #Returning None as bcs
-            return (a, None)
-
-    helmholtz = {
-        "pc_python_type": "__main__.HelmholtzPC",
-        "aux_pc_type": "lu",
-        "aux_pc_factor_mat_solver_type": "mumps"
-    }
-
-    sparameters = {
-        "snes_monitor": None,
-        #"snes_lag_jacobian": -2,
-        #"snes_lag_jacobian_persists": None,
-        "ksp_type": "gmres",
-        #"ksp_monitor": None,
-        "ksp_converged_reason": None,
-        #"ksp_view": None,
-        "ksp_atol": 1e-50,
-        "ksp_rtol": 1e-12,
-        "ksp_max_it": 400,
-        "pc_type": "composite",
-        "pc_composite_type": "multiplicative",
-        "pc_composite_pcs": "ksp,python",
-        "sub_1": patch,
-        "sub_0": helmholtz,
-    }
-
-    
     
 dt = 60*60*args.dt
 dT.assign(dt)
@@ -529,7 +601,7 @@ if args.solver_mode == "block":
 else:
     nprob = fd.NonlinearVariationalProblem(eqn, Unp1)
     ctx = {"mu": gamma*2/g/dt}
-    nsolver = fd.NonlinearVariationalSolver(nprob,
+    nsolver = fd.NonlinearVariationalSolver(nprob, options_prefix="swe",
                                             solver_parameters=sparameters,
                                             appctx=ctx)
 
@@ -595,7 +667,7 @@ PETSc.Sys.Print('tmax', tmax, 'dt', dt)
 itcount = 0
 stepcount = 0
 while t < tmax + 0.5*dt:
-    PETSc.Sys.Print(t)
+    PETSc.Sys.Print(f"\nTimestep {stepcount} at time {t}\n")
     t += dt
     tdump += dt
 
