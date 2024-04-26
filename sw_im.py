@@ -16,10 +16,7 @@ parser.add_argument('--dt', type=float, default=1, help='Timestep in hours. Defa
 parser.add_argument('--filename', type=str, default='w5aug')
 parser.add_argument('--coords_degree', type=int, default=1, help='Degree of polynomials for sphere mesh approximation.')
 parser.add_argument('--degree', type=int, default=1, help='Degree of finite element space (the DG space).')
-parser.add_argument('--kspschur', type=int, default=40, help='Max number of KSP iterations on the Schur complement. Default 40.')
 parser.add_argument('--kspmg', type=int, default=3, help='Max number of KSP iterations in the MG levels. Default 3.')
-parser.add_argument('--tlblock', type=str, default='mg', help='Solver for the velocity-velocity block. mg==Multigrid with patchPC, lu==direct solver with MUMPS, patch==just do a patch smoother. Default is mg')
-parser.add_argument('--schurpc', type=str, default='mass', help='Preconditioner for the Schur complement. mass==mass inverse, helmholtz==helmholtz inverse * laplace * mass inverse. Default is mass')
 parser.add_argument('--show_args', action='store_true', help='Output all the arguments.')
 parser.add_argument('--time_scheme', type=int, default=0, help='Timestepping scheme. 0=Crank-Nicholson. 1=Implicit midpoint rule.')
 
@@ -55,7 +52,7 @@ def high_order_mesh_hierarchy(mh, degree, R0):
                             mh.fine_to_coarse_cells,
                             mh.refinements_per_level, mh.nested)
 
-if args.tlblock == "mg":
+if args.solver_mode == "monolithic":
     basemesh = fd.IcosahedralSphereMesh(radius=R0,
                                         refinement_level=base_level,
                                         degree=1,
@@ -210,175 +207,31 @@ class HelmholtzPC(fd.AuxiliaryOperatorPC):
         #Returning None as bcs
         return (a, None)
 
-# PC transforming to AL form
-class ALPC(fd.PCBase):
-    def initialize(self, pc):
-        if pc.getType() != "python":
-            raise ValueError("Expecting PC type python")
-        prefix = pc.getOptionsPrefix() + "al_"
-        PETSc.Sys.Print("prefix "+prefix)
-        
-        #input and output functions
-        self.xfstar = fd.Cofunction(W.dual()) # the input residual
-        self.xf = fd.Function(W) # the Riesz mapped residual
-        self.yf = fd.Function(W) # the preconditioned residual
-        v, q = fd.TestFunctions(W)
-        
-        J = fd.derivative(eqn, Unp1)
-        xf_u, xf_p = fd.split(self.xf)
-        inner = fd.inner; dx = fd.dx; div = fd.div
-        L = inner(xf_u, v)*dx + q*xf_p*dx
-        L += gamma*div(v)*xf_p*dx
-
-        prob = fd.LinearVariationalProblem(J, L, self.yf)
-
-        sp = {
-            #"ksp_view": None,
-            "ksp_type": "preonly",
-            "pc_type": "fieldsplit",
-            "pc_fieldsplit_type": "multiplicative",
-            "fieldsplit_0": fieldsplit0,
-            "fieldsplit_1": fieldsplit1
-        }
-        
-        self.solver = fd.LinearVariationalSolver(prob,
-                                                 solver_parameters=sp)
-        #options_prefix=prefix)
-
-    def update(self, pc):
-        pass
-
-    def applyTranspose(self, pc, x, y):
-        raise NotImplementedError
-
-    def apply(self, pc, x, y):
-
-        # copy petsc vec into Function
-        with self.xfstar.dat.vec_wo as v:
-            x.copy(v)
-        self.xf.assign(self.xfstar.riesz_representation())
-        #do the mass solver, solve(x, b)
-        self.solver.solve()
-        
-        # copy petsc vec into Function
-        with self.yf.dat.vec_ro as v:
-            v.copy(y)
-
 if args.solver_mode == 'AL':
-    
+
     sparameters = {
-        "mat_type":"matfree",
         'snes_monitor': None,
-        "ksp_type": "fgmres",
-        "ksp_gmres_modifiedgramschmidt": None,
+        "snes_lag_jacobian": 2,
+        "ksp_type": "gmres",
+        "ksp_atol": 1.0e-50,
+        "ksp_rtol": 1.0e-4,
         'ksp_monitor': None,
         "pc_type": "fieldsplit",
+        "pc_fieldsplit_0_fields": "1",
+        "pc_fieldsplit_1_fields": "0",
         "pc_fieldsplit_type": "schur",
-        #"pc_fieldsplit_schur_fact_type": "full",
-        "pc_fieldsplit_off_diag_use_amat": True,
+        "pc_fieldsplit_schur_fact_type": "full",
     }
 
-    bottomright_mass = {
+    LU = {
         "ksp_type": "preonly",
-        #"ksp_monitor":None,
-        "ksp_gmres_modifiedgramschmidt": None,
-        "ksp_max_it": args.kspschur,
-        #"ksp_monitor":None,
-        "pc_type": "python",
-        "pc_python_type": "firedrake.MassInvPC",
-        "Mp_pc_type": "bjacobi",
-        "Mp_sub_pc_type": "ilu"
+        "pc_type": "lu",
+        "pc_factor_mat_solver_type": "mumps"
     }
 
-    if args.schurpc == "mass":
-        sparameters["fieldsplit_1"] = bottomright_mass
-    elif args.schurpc == "helmholtz":
-        sparameters["fieldsplit_1"] = bottomright_helm
-    else:
-        raise KeyError('Unknown Schur PC option.')
+    sparameters["fieldsplit_0"] = LU
+    sparameters["fieldsplit_1"] = LU
 
-    topleft_LU = {
-        "ksp_type": "preonly",
-        "pc_type": "python",
-        "pc_python_type": "firedrake.AssembledPC",
-        "assembled_pc_type": "lu",
-        "assembled_pc_factor_mat_solver_type": "mumps"
-    }
-
-    topleft_MG = {
-        "ksp_type": "preonly",
-        "pc_type": "mg",
-        #"pc_mg_type": "full",
-        "mg_coarse_ksp_type": "preonly",
-        "mg_coarse_pc_type": "python",
-        "mg_coarse_pc_python_type": "firedrake.AssembledPC",
-        "mg_coarse_assembled_pc_type": "lu",
-        "mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
-        "mg_levels_ksp_type": "gmres",
-        "mg_levels_ksp_max_it": args.kspmg,
-        "mg_levels_pc_type": "python",
-        "mg_levels_pc_python_type": "firedrake.PatchPC",
-        "mg_levels_patch_pc_patch_save_operators": True,
-        "mg_levels_patch_pc_patch_partition_of_unity": False,
-        "mg_levels_patch_pc_patch_sub_mat_type": "seqaij",
-        "mg_levels_patch_pc_patch_construct_type": "star",
-        "mg_levels_patch_pc_patch_multiplicative": False,
-        "mg_levels_patch_pc_patch_symmetrise_sweep": False,
-        "mg_levels_patch_pc_patch_construct_dim": 0,
-        "mg_levels_patch_pc_patch_sub_mat_type": "seqdense",
-        "mg_levels_patch_pc_patch_dense_inverse": True,
-        "mg_levels_patch_pc_patch_precompute_element_tensors": True,
-        "mg_levels_patch_sub_pc_factor_mat_solver_type": "petsc",
-        "mg_levels_patch_sub_ksp_type": "preonly",
-        "mg_levels_patch_sub_pc_type": "lu",
-    }
-
-    topleft_MGs = {
-        "ksp_type": "preonly",
-        "ksp_max_it": 3,
-        "pc_type": "mg",
-        "mg_coarse_ksp_type": "preonly",
-        "mg_coarse_pc_type": "python",
-        "mg_coarse_pc_python_type": "firedrake.AssembledPC",
-        "mg_coarse_assembled_pc_type": "lu",
-        "mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
-        "mg_levels_ksp_type": "gmres",
-        "mg_levels_ksp_max_it": args.kspmg,
-        "mg_levels_pc_type": "python",
-        "mg_levels_pc_python_type": "firedrake.AssembledPC",
-        "mg_levels_assembled_pc_type": "python",
-        "mg_levels_assembled_pc_python_type": "firedrake.ASMStarPC",
-        "mg_levels_assembled_pc_star_backend": "tinyasm",
-        "mg_levels_assmbled_pc_star_construct_dim": 0
-    }
-    
-    topleft_smoother = {
-        "ksp_type": "gmres",
-        "ksp_max_it": 3,
-        "ksp_monitor": None,
-        "pc_type": "python",
-        "pc_python_type": "firedrake.PatchPC",
-        "patch_pc_patch_save_operators": True,
-        "patch_pc_patch_partition_of_unity": False,
-        "patch_pc_patch_sub_mat_type": "seqaij",
-        "patch_pc_patch_construct_type": "star",
-        "patch_pc_patch_multiplicative": False,
-        "patch_pc_patch_symmetrise_sweep": False,
-        "patch_pc_patch_construct_dim": 0,
-        "patch_sub_ksp_type": "preonly",
-        "patch_sub_pc_type": "lu",
-    }
-
-    if args.tlblock == "mg":
-        sparameters["fieldsplit_0"] = topleft_MG
-    elif args.tlblock == "patch":
-        sparameters["fieldsplit_0"] = topleft_smoother
-    else:
-        assert(args.tlblock=="lu")
-        sparameters["fieldsplit_0"] = topleft_LU
-
-elif args.solver_mode == 'ALL':
-        pass
 elif args.solver_mode == 'monolithic':
     # monolithic solver options
 
