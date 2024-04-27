@@ -19,7 +19,7 @@ parser.add_argument('--coords_degree', type=int, default=1, help='Degree of poly
 parser.add_argument('--degree', type=int, default=1, help='Degree of finite element space (the DG space).')
 parser.add_argument('--kspmg', type=int, default=3, help='Max number of KSP iterations in the MG levels. Default 3.')
 parser.add_argument('--show_args', action='store_true', help='Output all the arguments.')
-parser.add_argument('--time_scheme', type=int, default=0, help='Timestepping scheme. 0=Crank-Nicholson. 1=Implicit midpoint rule.')
+parser.add_argument('--time_scheme', type=int, default=0, help='Timestepping scheme. 0=Crank-Nicholson (default). 1=Implicit midpoint rule.')
 
 args = parser.parse_known_args()
 args = args[0]
@@ -216,9 +216,6 @@ class ApproxUSchurPC(fd.AuxiliaryOperatorPC):
         assert(args.time_scheme == 0)
         
         u1, h1 = fd.split(Unp1)
-        #Upwind is a switch so we don't differentiate it
-        Upwind = 0.5 * (fd.sign(fd.dot(u1, n)) + 1)
-        K = 0.5*(fd.inner(u1, uf) + fd.inner(uf, u1))
         # The original form for u equation
         #(fd.inner(v, f*perp(u))*dx
         # - fd.inner(perp(fd.grad(fd.inner(v, perp(u)))), u)*dx
@@ -226,6 +223,9 @@ class ApproxUSchurPC(fd.AuxiliaryOperatorPC):
         #            both(Upwind*u))*dS
         # - fd.div(v)*(g*(h + b) + K)*dx)
 
+        #Upwind is a switch so we don't differentiate it
+        Upwind = 0.5 * (fd.sign(fd.dot(u1, n)) + 1)
+        
         Jm = fd.inner(vf, uf)*dx
         Jf = 0.5*dT*fd.inner(vf, f*perp(uf))*dx
         Jf += - 0.5*dT*fd.inner(perp(fd.grad(fd.inner(vf, perp(uf)))), u1)*dx
@@ -234,7 +234,7 @@ class ApproxUSchurPC(fd.AuxiliaryOperatorPC):
                               both(Upwind*u1))*dS
         Jf += 0.5*dT*fd.inner(both(perp(n)*fd.inner(vf, perp(u1))),
                               both(Upwind*uf))*dS
-        Jf += - 0.5*dT*fd.div(vf)*K*dx
+        Jf += - 0.5*dT*fd.div(vf)*fd.inner(u1, uf)*dx
 
         # we have not added the pressure gradient yet, this comes next
 
@@ -258,11 +258,12 @@ if args.solver_mode == 'schurU':
 
     sparameters = {
         'snes_monitor': None,
-        "snes_lag_jacobian": 2,
-        "ksp_type": "gmres",
+        #"snes_lag_jacobian": 2,
+        "ksp_type": "preonly",
         "ksp_atol": 1.0e-50,
-        "ksp_rtol": 5.0e-1,
+        "ksp_rtol": 1.0e-6,
         'ksp_monitor': None,
+        'ksp_view': None,
         "pc_type": "fieldsplit",
         "pc_fieldsplit_0_fields": "1",
         "pc_fieldsplit_1_fields": "0",
@@ -276,9 +277,9 @@ if args.solver_mode == 'schurU':
         "pc_factor_mat_solver_type": "mumps"
     }
     approxSchur = {
-        "ksp_type": "gmres",
+        "ksp_type": "preonly",
+        "ksp_monitor": None,
         "pc_type": "python",
-        'ksp_monitor': None,
         "pc_python_type": f"{__name__}.ApproxUSchurPC",
         "aux_pc_type": "lu",
         "aux_pc_factor_mat_solver_type": "mumps"
