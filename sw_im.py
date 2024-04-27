@@ -11,7 +11,8 @@ parser.add_argument('--ref_level', type=int, default=5, help='Refinement level o
 parser.add_argument('--dmax', type=float, default=15, help='Final time in days. Default 15.')
 parser.add_argument('--dumpt', type=float, default=24, help='Dump time in hours. Default 24.')
 parser.add_argument('--gamma', type=float, default=0., help='Augmented Lagrangian scaling parameter. Default 0.')
-parser.add_argument('--solver_mode', type=str, default='monolithic', help='Solver strategy. monolithic=use monolithic MG with Schwarz smoothers. AL=use augmented Lagrangian formulation. block=use Hdiv-style block preconditioner (requires gamma>1). splitdirect=multiplicative composition of patch and direct solve on linear SWE. Default = monolithic')
+parser.add_argument('--solver_mode', type=str, default='monolithic', help='Solver strategy. monolithic=use monolithic MG with Schwarz smoothers. schurU=eliminate down to u and do a direct solve. block=use Hdiv-style block preconditioner (requires gamma>1). splitdirect=multiplicative composition of patch and direct solve on linear SWE. Default = monolithic')
+parser.add_argument('--schur_complement', type=str, default='use_u', help='Approximation of Schur complement to use. use_u=use the u-u block (requires gamma > 0). approx_sub_D=use an approximate substitution of D neglecting transport of dD by Ubar.')
 parser.add_argument('--dt', type=float, default=1, help='Timestep in hours. Default 1.')
 parser.add_argument('--filename', type=str, default='w5aug')
 parser.add_argument('--coords_degree', type=int, default=1, help='Degree of polynomials for sphere mesh approximation.')
@@ -139,8 +140,9 @@ def u_op(v, u, h):
 def h_op(phi, u, h):
     uup = 0.5 * (fd.dot(u, n) + abs(fd.dot(u, n)))
     return (- fd.inner(fd.grad(phi), u)*h*dx
-            + fd.jump(phi)*(uup('+')*h('+')
-                            - uup('-')*h('-'))*dS)
+        + fd.jump(phi)*(uup('+')*h('+')
+                        - uup('-')*h('-'))*dS
+            )
 
 
 if args.time_scheme == 1:
@@ -207,14 +209,59 @@ class HelmholtzPC(fd.AuxiliaryOperatorPC):
         #Returning None as bcs
         return (a, None)
 
-if args.solver_mode == 'AL':
+# approximate Schur complement
+class ApproxUSchurPC(fd.AuxiliaryOperatorPC):
+    def form(self, pc, vf, uf):
+        # only hand coded for CN
+        assert(args.time_scheme == 0)
+        
+        u1, h1 = fd.split(Unp1)
+        #Upwind is a switch so we don't differentiate it
+        Upwind = 0.5 * (fd.sign(fd.dot(u1, n)) + 1)
+        K = 0.5*(fd.inner(u1, uf) + fd.inner(uf, u1))
+        # The original form for u equation
+        #(fd.inner(v, f*perp(u))*dx
+        # - fd.inner(perp(fd.grad(fd.inner(v, perp(u)))), u)*dx
+        # + fd.inner(both(perp(n)*fd.inner(v, perp(u))),
+        #            both(Upwind*u))*dS
+        # - fd.div(v)*(g*(h + b) + K)*dx)
+
+        Jm = fd.inner(vf, uf)*dx
+        Jf = 0.5*dT*fd.inner(vf, f*perp(uf))*dx
+        Jf += - 0.5*dT*fd.inner(perp(fd.grad(fd.inner(vf, perp(uf)))), u1)*dx
+        Jf += - 0.5*dT*fd.inner(perp(fd.grad(fd.inner(vf, perp(u1)))), uf)*dx
+        Jf += 0.5*dT*fd.inner(both(perp(n)*fd.inner(vf, perp(uf))),
+                              both(Upwind*u1))*dS
+        Jf += 0.5*dT*fd.inner(both(perp(n)*fd.inner(vf, perp(u1))),
+                              both(Upwind*uf))*dS
+        Jf += - 0.5*dT*fd.div(vf)*K*dx
+
+        # we have not added the pressure gradient yet, this comes next
+
+        # differentiated abs operator
+        uupf = 0.5 * (fd.dot(uf, n) + fd.dot(uf, n))*fd.sign(fd.dot(u1, n))
+        # the original form for h equation
+        #(- fd.inner(fd.grad(phi), u)*h*dx
+        #        + fd.jump(phi)*(uup('+')*h('+')
+        #                        - uup('-')*h('-'))*dS
+        #    )
+        # the elimination neglects terms with delta h
+        hbit = fd.inner(fd.grad(fd.div(vf)), uf)*h1*dx
+        hbit +=  -fd.jump(fd.div(vf))*(uupf('+')*h1('+')
+                                - uupf('-')*h1('-'))*dS
+        Jf -= 0.25*dT**2*g*hbit
+        J = Jm + Jf
+        #Returning None as bcs
+        return (J, None)
+
+if args.solver_mode == 'schurU':
 
     sparameters = {
         'snes_monitor': None,
         "snes_lag_jacobian": 2,
         "ksp_type": "gmres",
         "ksp_atol": 1.0e-50,
-        "ksp_rtol": 1.0e-4,
+        "ksp_rtol": 5.0e-1,
         'ksp_monitor': None,
         "pc_type": "fieldsplit",
         "pc_fieldsplit_0_fields": "1",
@@ -228,9 +275,20 @@ if args.solver_mode == 'AL':
         "pc_type": "lu",
         "pc_factor_mat_solver_type": "mumps"
     }
+    approxSchur = {
+        "ksp_type": "gmres",
+        "pc_type": "python",
+        'ksp_monitor': None,
+        "pc_python_type": f"{__name__}.ApproxUSchurPC",
+        "aux_pc_type": "lu",
+        "aux_pc_factor_mat_solver_type": "mumps"
+    }
 
     sparameters["fieldsplit_0"] = LU
-    sparameters["fieldsplit_1"] = LU
+    if args.schur_complement == 'approx_sub_D':
+        sparameters["fieldsplit_1"] = approxSchur
+    else:
+        sparameters["fieldsplit_1"] = LU
 
 elif args.solver_mode == 'monolithic':
     # monolithic solver options
