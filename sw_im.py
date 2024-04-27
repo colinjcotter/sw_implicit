@@ -259,11 +259,11 @@ if args.solver_mode == 'schurU':
     sparameters = {
         'snes_monitor': None,
         #"snes_lag_jacobian": 2,
-        "ksp_type": "preonly",
+        "ksp_type": "gmres",
         "ksp_atol": 1.0e-50,
         "ksp_rtol": 1.0e-6,
         'ksp_monitor': None,
-        'ksp_view': None,
+        #'ksp_view': None,
         "pc_type": "fieldsplit",
         "pc_fieldsplit_0_fields": "1",
         "pc_fieldsplit_1_fields": "0",
