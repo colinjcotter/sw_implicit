@@ -19,6 +19,7 @@ parser.add_argument('--coords_degree', type=int, default=1, help='Degree of poly
 parser.add_argument('--degree', type=int, default=1, help='Degree of finite element space (the DG space).')
 parser.add_argument('--kspmg', type=int, default=3, help='Max number of KSP iterations in the MG levels. Default 3.')
 parser.add_argument('--show_args', action='store_true', help='Output all the arguments.')
+parser.add_argument('--one_step', action='store_true', help='Do one timestep and exit (overriding dmax).')
 parser.add_argument('--time_scheme', type=int, default=0, help='Timestepping scheme. 0=Crank-Nicholson (default). 1=Implicit midpoint rule.')
 
 args = parser.parse_known_args()
@@ -283,7 +284,7 @@ if args.solver_mode == 'schurU':
         "pc_type": "python",
         "pc_python_type": f"{__name__}.ApproxUSchurPC",
         "aux_pc_type": "lu",
-        #"aux_pc_factor_mat_solver_type": "mumps"
+        "aux_pc_factor_mat_solver_type": "mumps"
     }
 
     sparameters["fieldsplit_0"] = LU
@@ -588,7 +589,10 @@ while t < tmax + 0.5*dt:
 
     nsolver.solve()
     Un.assign(Unp1)
-    
+
+    if args.one_step:
+        t = tmax + dt
+
     if tdump > dumpt - dt*0.5:
         etan.assign(h0 - H + b)
         un.assign(u0)
