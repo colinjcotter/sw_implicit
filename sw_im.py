@@ -259,7 +259,7 @@ if args.solver_mode == 'schurU':
     sparameters = {
         'snes_monitor': None,
         #"snes_lag_jacobian": 2,
-        "ksp_type": "gmres",
+        "ksp_type": "fgmres",
         "ksp_atol": 1.0e-50,
         "ksp_rtol": 1.0e-6,
         "ksp_converged_reason": None,
@@ -278,10 +278,10 @@ if args.solver_mode == 'schurU':
         "pc_factor_mat_solver_type": "mumps"
     }
     approxSchur = {
-        "ksp_type": "preonly",
+        "ksp_type": "gmres",
+        "ksp_converged_reason": None,
         "pc_type": "python",
         "pc_python_type": f"{__name__}.ApproxUSchurPC",
-        "aux_ksp_type": "preonly",
         "aux_pc_type": "lu",
         #"aux_pc_factor_mat_solver_type": "mumps"
     }
