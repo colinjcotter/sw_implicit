@@ -214,7 +214,7 @@ class ApproxUSchurPC(fd.AuxiliaryOperatorPC):
     def form(self, pc, vf, uf):
         # only hand coded for CN
         assert(args.time_scheme == 0)
-        
+
         u1, h1 = fd.split(Unp1)
         # The original form for u equation
         #(fd.inner(v, f*perp(u))*dx
@@ -225,16 +225,15 @@ class ApproxUSchurPC(fd.AuxiliaryOperatorPC):
 
         #Upwind is a switch so we don't differentiate it
         Upwind = 0.5 * (fd.sign(fd.dot(u1, n)) + 1)
-        
-        Jm = fd.inner(vf, uf)*dx
-        Jf = 0.5*dT*fd.inner(vf, f*perp(uf))*dx
-        Jf += - 0.5*dT*fd.inner(perp(fd.grad(fd.inner(vf, perp(uf)))), u1)*dx
-        Jf += - 0.5*dT*fd.inner(perp(fd.grad(fd.inner(vf, perp(u1)))), uf)*dx
-        Jf += 0.5*dT*fd.inner(both(perp(n)*fd.inner(vf, perp(uf))),
+
+        Jf = fd.inner(vf, f*perp(uf))*dx
+        Jf += - fd.inner(perp(fd.grad(fd.inner(vf, perp(uf)))), u1)*dx
+        Jf += - fd.inner(perp(fd.grad(fd.inner(vf, perp(u1)))), uf)*dx
+        Jf += fd.inner(both(perp(n)*fd.inner(vf, perp(uf))),
                               both(Upwind*u1))*dS
-        Jf += 0.5*dT*fd.inner(both(perp(n)*fd.inner(vf, perp(u1))),
+        Jf += fd.inner(both(perp(n)*fd.inner(vf, perp(u1))),
                               both(Upwind*uf))*dS
-        Jf += - 0.5*dT*fd.div(vf)*fd.inner(u1, uf)*dx
+        Jf += - fd.div(vf)*fd.inner(u1, uf)*dx
 
         # we have not added the pressure gradient yet, this comes next
 
@@ -249,8 +248,10 @@ class ApproxUSchurPC(fd.AuxiliaryOperatorPC):
         hbit = fd.inner(fd.grad(fd.div(vf)), uf)*h1*dx
         hbit +=  -fd.jump(fd.div(vf))*(uupf('+')*h1('+')
                                 - uupf('-')*h1('-'))*dS
-        Jf -= 0.25*dT**2*g*hbit
-        J = Jm + Jf
+        Jf -= 0.5*dT*g*hbit
+
+        Jm = fd.inner(vf, uf)*dx
+        J = Jm + 0.5*dT*Jf
         #Returning None as bcs
         return (J, None)
 
