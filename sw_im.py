@@ -247,7 +247,7 @@ class ApproxUSchurPC(fd.AuxiliaryOperatorPC):
         # the elimination neglects terms with delta h
         hbit = fd.inner(fd.grad(fd.div(vf)), uf)*h1*dx
         hbit +=  -fd.jump(fd.div(vf))*(uupf('+')*h1('+')
-                                - uupf('-')*h1('-'))*dS
+                                       - uupf('-')*h1('-'))*dS
         Jf -= 0.5*dT*g*hbit
 
         Jm = fd.inner(vf, uf)*dx
