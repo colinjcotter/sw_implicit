@@ -238,6 +238,7 @@ class ApproxUSchurPC(fd.AuxiliaryOperatorPC):
         # we have not added the pressure gradient yet, this comes next
 
         # differentiated abs operator
+        # (this seemed to cause problems so not using currently.)
         uupf = 0.5 * (fd.dot(uf, n) + fd.dot(uf, n))*fd.sign(fd.dot(u1, n))
         # the original form for h equation
         #(- fd.inner(fd.grad(phi), u)*h*dx
@@ -245,11 +246,9 @@ class ApproxUSchurPC(fd.AuxiliaryOperatorPC):
         #                        - uup('-')*h('-'))*dS
         #    )
         # the elimination neglects terms with delta h
-        hbit = fd.inner(fd.grad(fd.div(vf)), uf)*h1*dx
-        hbit +=  -fd.jump(fd.div(vf))*(uupf('+')*h1('+')
-                                       - uupf('-')*h1('-'))*dS
+        # and any surface terms in double integration by parts
+        hbit = -fd.div(vf)*fd.div(uf*h1)*dx
         Jf -= 0.5*dT*g*hbit
-
         Jm = fd.inner(vf, uf)*dx
         J = Jm + 0.5*dT*Jf
         #Returning None as bcs
@@ -263,7 +262,8 @@ if args.solver_mode == 'schurU':
         "ksp_type": "gmres",
         "ksp_atol": 1.0e-50,
         "ksp_rtol": 1.0e-6,
-        'ksp_monitor': None,
+        "ksp_converged_reason": None,
+        #'ksp_monitor': None,
         #'ksp_view': None,
         "pc_type": "fieldsplit",
         "pc_fieldsplit_0_fields": "1",
@@ -279,11 +279,11 @@ if args.solver_mode == 'schurU':
     }
     approxSchur = {
         "ksp_type": "preonly",
-        "ksp_monitor": None,
         "pc_type": "python",
         "pc_python_type": f"{__name__}.ApproxUSchurPC",
+        "aux_ksp_type": "preonly",
         "aux_pc_type": "lu",
-        "aux_pc_factor_mat_solver_type": "mumps"
+        #"aux_pc_factor_mat_solver_type": "mumps"
     }
 
     sparameters["fieldsplit_0"] = LU
