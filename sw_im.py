@@ -278,13 +278,20 @@ if args.solver_mode == 'schurU':
         "pc_type": "lu",
         "pc_factor_mat_solver_type": "mumps"
     }
-    approxSchur = {
+
+    ILU = {
         "ksp_type": "gmres",
+        "pc_type": "bjacobi",
+        "sub_pc_type": "ilu",
+    }
+
+    approxSchur = {
+        "ksp_type": "fgmres",
         "ksp_converged_reason": None,
         "pc_type": "python",
         "pc_python_type": f"{__name__}.ApproxUSchurPC",
         "aux_pc_type": "lu",
-        "aux_pc_factor_mat_solver_type": "mumps"
+        #"aux_pc_factor_mat_solver_type": "mumps"
     }
 
     sparameters["fieldsplit_0"] = LU
@@ -587,7 +594,8 @@ while t < tmax + 0.5*dt:
     t += dt
     tdump += dt
 
-    nsolver.solve()
+    with PETSc.Log.Event("time solver"):
+        nsolver.solve()
     Un.assign(Unp1)
 
     if args.one_step:
@@ -602,4 +610,4 @@ while t < tmax + 0.5*dt:
     stepcount += 1
     itcount += nsolver.snes.getLinearSolveIterations()
 PETSc.Sys.Print("Iterations", itcount, "its per step", itcount/stepcount,
-                "dt", dt, "tlblock", args.tlblock, "ref_level", args.ref_level, "dmax", args.dmax)
+                "dt", dt, "ref_level", args.ref_level, "dmax", args.dmax)
