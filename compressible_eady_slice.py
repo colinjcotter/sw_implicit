@@ -54,7 +54,7 @@ V2 = fd.FunctionSpace(mesh, V3_elt, name="Pressure")
 Vt = fd.FunctionSpace(mesh, V2t_elt, name="Temperature")
 Vv = fd.FunctionSpace(mesh, V2v_elt, name="Vv")
 
-ordering = "original"
+ordering = "ptu"
 
 # order is based on the original order V1 * V2 * Vt
 # it gives the order to recover original order
@@ -211,7 +211,7 @@ nprob = fd.NonlinearVariationalProblem(eqn, Unp1, bcs=bcs)
 nsolver = fd.NonlinearVariationalSolver(nprob, solver_parameters=sparameters,
                                         options_prefix="nsolver")
 
-name = 'eady_comp'
+name = 'eady_comp_adv'
 file_eady = VTKFile(name+'.pvd')
 Uns = Un.subfunctions
 un, rhon, thetan = tuple(Uns[i] for i in order)
@@ -244,7 +244,7 @@ Unp1.assign(Un)
 t = 0.
 day = 60*60*24
 tdump = 0.
-tmax = 50*dt
+tmax = 10*day
 #tmax = 30*day #  30*day
 dumpt = 0.25*day
 
