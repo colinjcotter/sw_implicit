@@ -54,7 +54,7 @@ V2 = fd.FunctionSpace(mesh, V3_elt, name="Pressure")
 Vt = fd.FunctionSpace(mesh, V2t_elt, name="Temperature")
 Vv = fd.FunctionSpace(mesh, V2v_elt, name="Vv")
 
-ordering = "ptu"
+ordering = "original"
 
 # order is based on the original order V1 * V2 * Vt
 # it gives the order to recover original order
@@ -129,9 +129,9 @@ hydrostatic_rho(Vv, V2, mesh, thetan, rhon=rhon, pi_boundary=fd.Constant(1),
 
 sparameters = {
     "snes_converged_reason": None,
-    "snes_lag_jacobian" : -2,
-    "snes_lag_jacobian_persists" : None,
-    "snes_lag_preconditioner" : -2,
+    "snes_lag_jacobian" : 10,
+    #"snes_lag_jacobian_persists" : None,
+    "snes_lag_preconditioner" : 10,
     "mat_type": "matfree",
     "ksp_type": "gmres",
     "snes_monitor": None,
@@ -144,7 +144,7 @@ sparameters = {
     "pc_python_type": "firedrake.AssembledPC",
     "assembled_pc_type": "python",
     "assembled_pc_python_type": "firedrake.ASMStarPC",
-    "assembled_pc_star_sub_sub_pc_type": "ilu",
+    "assembled_pc_star_sub_sub_pc_type": "lu",
     "assembled_pc_star_sub_sub_ksp_type": "preonly",
     "assembled_pc_star_construct_dim": 0,
     "assembled_pc_star_sub_sub_pc_factor_mat_ordering_type": "rcm"
