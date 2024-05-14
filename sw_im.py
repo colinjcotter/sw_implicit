@@ -2,6 +2,8 @@ import firedrake as fd
 #get command arguments
 from petsc4py import PETSc
 from firedrake.__future__ import interpolate
+from firedrake.output import VTKFile
+print = PETSc.Sys.Print
 PETSc.Sys.popErrorHandler()
 import mg
 import argparse
@@ -19,6 +21,7 @@ parser.add_argument('--coords_degree', type=int, default=1, help='Degree of poly
 parser.add_argument('--degree', type=int, default=1, help='Degree of finite element space (the DG space).')
 parser.add_argument('--kspmg', type=int, default=3, help='Max number of KSP iterations in the MG levels. Default 3.')
 parser.add_argument('--show_args', action='store_true', help='Output all the arguments.')
+parser.add_argument('--linear', action='store_true', help='Solve the linear equations.')
 parser.add_argument('--one_step', action='store_true', help='Do one timestep and exit (overriding dmax).')
 parser.add_argument('--time_scheme', type=int, default=0, help='Timestepping scheme. 0=Crank-Nicholson (default). 1=Implicit midpoint rule.')
 
@@ -37,16 +40,16 @@ name = args.filename
 deg = args.coords_degree
 distribution_parameters = {"partition": True, "overlap_type": (fd.DistributedMeshOverlapType.VERTEX, 2)}
 #distribution_parameters = {"partition": True, "overlap_type": (fd.DistributedMeshOverlapType.FACET, 2)}
-
+nonlinear = not args.linear
 
 def high_order_mesh_hierarchy(mh, degree, R0):
     meshes = []
     for m in mh:
         X = fd.VectorFunctionSpace(m, "Lagrange", degree)
-        new_coords = fd.assemble(fd.interpolate(m.coordinates, X))
+        new_coords = fd.Function(X).interpolate(m.coordinates)
         x, y, z = new_coords
         r = (x**2 + y**2 + z**2)**0.5
-        new_coords = fd.assemble(fd.interpolate(R0*new_coords/r, X))
+        new_coords.interpolate(R0*new_coords/r)
         new_mesh = fd.Mesh(new_coords)
         meshes.append(new_mesh)
 
@@ -80,7 +83,8 @@ R0 = fd.Constant(R0)
 cx, cy, cz = fd.SpatialCoordinate(mesh)
 
 outward_normals = fd.CellNormal(mesh)
-
+Vnormals = fd.VectorFunctionSpace(mesh, "DG", deg)
+outward_normals = fd.Function(Vnormals).interpolate(outward_normals)
 
 def perp(u):
     return fd.cross(outward_normals, u)
@@ -131,19 +135,25 @@ dS = fd.dS
 def u_op(v, u, h):
     Upwind = 0.5 * (fd.sign(fd.dot(u, n)) + 1)
     K = 0.5*fd.inner(u, u)
-    return (fd.inner(v, f*perp(u))*dx
-            - fd.inner(perp(fd.grad(fd.inner(v, perp(u)))), u)*dx
-            + fd.inner(both(perp(n)*fd.inner(v, perp(u))),
-                          both(Upwind*u))*dS
-            - fd.div(v)*(g*(h + b) + K)*dx)
-
+    if nonlinear:
+        return (fd.inner(v, f*perp(u))*dx
+                - fd.inner(perp(fd.grad(fd.inner(v, perp(u)))), u)*dx
+                + fd.inner(both(perp(n)*fd.inner(v, perp(u))),
+                           both(Upwind*u))*dS
+                - fd.div(v)*(g*(h + b) + K)*dx)
+    else:
+        return (fd.inner(v, f*perp(u))*dx
+                - fd.div(v)*g*(h + b)*dx)
 
 def h_op(phi, u, h):
-    uup = 0.5 * (fd.dot(u, n) + abs(fd.dot(u, n)))
-    return (- fd.inner(fd.grad(phi), u)*h*dx
-        + fd.jump(phi)*(uup('+')*h('+')
-                        - uup('-')*h('-'))*dS
-            )
+    if nonlinear:
+        uup = 0.5 * (fd.dot(u, n) + abs(fd.dot(u, n)))
+        return (- fd.inner(fd.grad(phi), u)*h*dx
+                + fd.jump(phi)*(uup('+')*h('+')
+                                - uup('-')*h('-'))*dS
+                )
+    else:
+        return H*phi*fd.div(u)*dx
 
 
 if args.time_scheme == 1:
@@ -303,20 +313,30 @@ if args.solver_mode == 'schurU':
 elif args.solver_mode == 'monolithic':
     # monolithic solver options
 
+    if nonlinear:
+        snes = "newtonls"
+    else:
+        snes = "ksponly"
+    
     sparameters = {
+        "snes_type": snes,
         "snes_monitor": None,
         "mat_type": "matfree",
-        "ksp_type": "fgmres",
-        "ksp_monitor_true_residual": None,
+        "ksp_type": "gmres",
+        #"ksp_monitor_true_residual": None,
         "ksp_converged_reason": None,
-        "ksp_atol": 1e-8,
-        "ksp_rtol": 1e-8,
-        "ksp_max_it": 400,
+        "snes_stol": 1e-50,
+        "snes_atol": 1e-50,
+        "snes_rtol": 1e-8,
+        "ksp_atol": 1e-50,
+        "ksp_rtol": 1e-10,
+        "ksp_max_it": 40,
         "pc_type": "mg",
         "pc_mg_cycle_type": "v",
         "pc_mg_type": "multiplicative",
-        "mg_levels_ksp_type": "gmres",
-        "mg_levels_ksp_max_it": 3,
+        "mg_levels_ksp_type": "richardson",
+        "mg_levels_ksp_richardson_scale": 0.95,
+        "mg_levels_ksp_max_it": 1,
         #"mg_levels_ksp_convergence_test": "skip",
         "mg_levels_pc_type": "python",
         "mg_levels_pc_python_type": "firedrake.PatchPC",
@@ -579,7 +599,7 @@ qparams = {'ksp_type':'cg'}
 qsolver = fd.LinearVariationalSolver(vprob,
                                      solver_parameters=qparams)
 
-file_sw = fd.File(name+'.pvd')
+file_sw = VTKFile(name+'.pvd')
 etan.assign(h0 - H + b)
 un.assign(u0)
 qsolver.solve()
