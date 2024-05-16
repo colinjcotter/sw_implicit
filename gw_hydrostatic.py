@@ -157,7 +157,7 @@ fd.assemble(One*v*fd.dx, tensor=Courant_denom)
 Courant = fd.Function(DG0, name="Courant")
 
 fd.assemble(Courant_num_form, tensor=Courant_num)
-Courant.assign(Courant_num/Courant_denom)
+Courant.interpolate(Courant_num/Courant_denom)
 
 file_gw.write(un, rhon, thetan, delta_rho, delta_theta, Courant)
 Unp1.assign(Un)
@@ -184,7 +184,7 @@ while t < tmax - 0.5*dt:
         delta_rho.assign(rhon-rho_back)
 
         fd.assemble(Courant_num_form, tensor=Courant_num)
-        Courant.assign(Courant_num/Courant_denom)
+        Courant.interpolate(Courant_num/Courant_denom)
         file_gw.write(un, rhon, thetan, delta_rho, delta_theta,
                       Courant)
         tdump -= dumpt

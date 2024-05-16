@@ -11,8 +11,8 @@ warnings.simplefilter("ignore", DeprecationWarning)
 
 import argparse
 parser = argparse.ArgumentParser(description='Straka testcase.')
-parser.add_argument('--nlayers', type=int, default=10, help='Number of layers, default 10.')
-parser.add_argument('--ncolumns', type=int, default=10, help='Number of columns, default 10.')
+parser.add_argument('--nlayers', type=int, default=32, help='Number of layers, default 10.')
+parser.add_argument('--ncolumns', type=int, default=256, help='Number of columns, default 10.')
 parser.add_argument('--tmax', type=float, default=15, help='Final time in minutes. Default 15.')
 parser.add_argument('--dumpt', type=float, default=1, help='Dump time in minutes. Default 1.')
 parser.add_argument('--dt', type=float, default=1, help='Timestep in seconds. Default 1.')
@@ -41,15 +41,15 @@ H = 6400.  # Height position of the model top
 mesh = fd.ExtrudedMesh(m, layers=nlayers, layer_height=H/nlayers)
 n = fd.FacetNormal(mesh)
 
-dT = fd.Constant(1, domain=mesh)
-g = fd.Constant(9.810616, domain=mesh)
-N = fd.Constant(0.01, domain=mesh)  # Brunt-Vaisala frequency (1/s)
-cp = fd.Constant(1004.5, domain=mesh)  # SHC of dry air at const. pressure (J/kg/K)
-R_d = fd.Constant(287., domain=mesh)  # Gas constant for dry air (J/kg/K)
-kappa = fd.Constant(2.0/7.0, domain=mesh)  # R_d/c_p
-p_0 = fd.Constant(1000.0*100.0, domain=mesh)  # reference pressure (Pa, not hPa)
-cv = fd.Constant(717., domain=mesh)  # SHC of dry air at const. volume (J/kg/K)
-T_0 = fd.Constant(273.15, domain=mesh)  # ref. temperature
+dT = fd.Constant(1)
+g = fd.Constant(9.810616)
+N = fd.Constant(0.01)  # Brunt-Vaisala frequency (1/s)
+cp = fd.Constant(1004.5)  # SHC of dry air at const. pressure (J/kg/K)
+R_d = fd.Constant(287.)  # Gas constant for dry air (J/kg/K)
+kappa = fd.Constant(2.0/7.0)  # R_d/c_p
+p_0 = fd.Constant(1000.0*100.0)  # reference pressure (Pa, not hPa)
+cv = fd.Constant(717.)  # SHC of dry air at const. volume (J/kg/K)
+T_0 = fd.Constant(273.15)  # ref. temperature
 
 name = args.filename    
 horizontal_degree = args.degree
@@ -82,18 +82,18 @@ Unp1 = fd.Function(W)
 x, z = fd.SpatialCoordinate(mesh)
 
 # N^2 = (g/theta)dtheta/dz => dtheta/dz = theta N^2g => theta=theta_0exp(N^2gz)
-Tsurf = fd.Constant(300., domain=mesh)
+Tsurf = fd.Constant(300.)
 thetab = Tsurf
 
-cp = fd.Constant(1004.5, domain=mesh)  # SHC of dry air at const. pressure (J/kg/K)
-Up = fd.as_vector([fd.Constant(0.0, domain=mesh), fd.Constant(1.0, domain=mesh)]) # up direction
+cp = fd.Constant(1004.5)  # SHC of dry air at const. pressure (J/kg/K)
+Up = fd.as_vector([fd.Constant(0.0), fd.Constant(1.0)]) # up direction
 
 un, rhon, thetan = Un.subfunctions
 thetan.interpolate(thetab)
 theta_back = fd.Function(Vt).assign(thetan)
 rhon.assign(1.0e-5)
 
-hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary=fd.Constant(1.0, domain=mesh),
+hydrostatic_rho(Vv, V2, mesh, thetan, rhon, pi_boundary=fd.Constant(1.0),
                     cp=cp, R_d=R_d, p_0=p_0, kappa=kappa, g=g, Up=Up,
                     top=False)
 
@@ -143,11 +143,11 @@ du, drho, dtheta = fd.TestFunctions(W)
 
 eqn = slice_imr_form(un, unp1, rhon, rhonp1, thetan, thetanp1,
                      du, drho, dtheta,
-                     dT=dT, n=n, Up=Up, c_pen=fd.Constant(2.0**(-7./2), domain=mesh),
+                     dT=dT, n=n, Up=Up, c_pen=fd.Constant(2.0**(-7./2)),
                      cp=cp, g=g, R_d=R_d, p_0=p_0,
                      kappa=kappa, mu=None,
-                     viscosity=fd.Constant(75., domain=mesh),
-                     diffusivity=fd.Constant(75., domain=mesh))
+                     viscosity=fd.Constant(75.),
+                     diffusivity=fd.Constant(75.))
 
 bcs = [fd.DirichletBC(W.sub(0), 0., "bottom"),
        fd.DirichletBC(W.sub(0), 0., "top")]
@@ -157,7 +157,7 @@ nprob = fd.NonlinearVariationalProblem(eqn, Unp1, bcs=bcs)
 nsolver = fd.NonlinearVariationalSolver(nprob, solver_parameters=sparameters,
                                         options_prefix="nsolver")
     
-file_gw = fd.File(name+'.pvd')
+file_gw = fd.output.VTKFile(name+'.pvd')
 un, rhon, thetan = Un.subfunctions
 delta_theta = fd.Function(Vt, name="delta theta").assign(thetan-theta_back)
 delta_rho = fd.Function(V2, name="delta rho").assign(rhon-rho_back)
@@ -183,7 +183,7 @@ Courant.interpolate(Courant_num/Courant_denom)
 DG = fd.FunctionSpace(mesh, "DG", 0)
 frontdetector = fd.Function(DG)
 
-front_expr = fd.conditional(thetan < fd.Constant(Tsurf*0.999, domain=mesh), x[0], 0)
+front_expr = fd.conditional(thetan < fd.Constant(Tsurf*0.999), x[0], 0)
 
 frontdetector.interpolate(front_expr)
 
