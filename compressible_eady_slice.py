@@ -44,6 +44,7 @@ m = fd.PeriodicRectangleMesh(base_columns, ny=1, Lx=2*L, Ly=1.0e-5*L,
 
 g = fd.Constant(9.810616)
 cp = fd.Constant(1004.5)  # SHC of dry air at const. pressure (J/kg/K)
+cv = 717.  # SHC of dry air at const. volume (J/kg/K)
 R_d = fd.Constant(287.)  # Gas constant for dry air (J/kg/K)
 kappa = fd.Constant(2.0/7.0)  # R_d/c_p
 p_0 = fd.Constant(1000.0*100.0)  # reference pressure (Pa, not hPa)
@@ -271,22 +272,67 @@ itcount = 0
 stepcount = 0
 
 # calculate rms of v
-def get_rmsv(un, t=None):
+def get_rmsv(un, t, mesh):
     y_vec = fd.as_vector([0., 1., 0.])
     y_vel = fd.inner(un, y_vec)
-    DG1 = fd.FunctionSpace(mesh, "DG", 0)
-    c = fd.Function(DG1)
+    DG0 = fd.FunctionSpace(mesh, "DG", 0)
+    c = fd.Function(DG0)
     c.assign(1)
     rmsv = fd.sqrt(fd.assemble((fd.dot(y_vel,y_vel))*dx)/fd.assemble(c*dx))
     PETSc.Sys.Print("rmsv = ", rmsv, "t = ", t)
     return rmsv
 
-# store the initial rmsv
+# calculate v kinetic energy
+def get_kinetic_energy_v(un, rhon, t, mesh):
+    y_vec = fd.as_vector([0., 1., 0.])
+    y_vel = fd.inner(un, y_vec)
+    kineticv_form = 0.5*rhon*fd.dot(y_vel,y_vel)
+    kineticv = fd.assemble(kineticv_form*dx)
+    return kineticv
+
+def get_kinetic_energy_uw(un, rhon, t, mesh):
+    u_vec = fd.as_vector([1., 0., 0.])
+    u_vel = fd.inner(un, u_vec)
+    w_vec = fd.as_vector([0., 0., 1.])
+    w_vel = fd.inner(un, w_vec)
+    kineticuw_form = 0.5*rhon*(fd.dot(u_vel,u_vel)+fd.dot(w_vel,w_vel))
+    kineticuw = fd.assemble(kineticuw_form*dx)
+    return kineticuw
+
+def get_potential_energy(rhon, thetan, Pi0, R_d, p_0, kappa, g, mesh):
+    x, y, z = fd.SpatialCoordinate(mesh)
+    Pi = pi_formula(rhon, thetan, R_d, p_0, kappa)
+    potential_form = rhon*(g*z + cv*Pi*thetan - cp*Pi0*thetan)
+    potential = fd.assemble(potential_form*dx)
+    return potential
+
+# store diagnostics at the initial stage
 rmsv_list = []
-rmsv = get_rmsv(un, t=t)
+rmsv = get_rmsv(un, t=t, mesh=mesh)
 rmsv_list.append(rmsv)
 PETSc.Sys.Print("rmsv =", rmsv_list)
 
+kineticv_list = []
+kineticv_ini = get_kinetic_energy_v(un, rhon, t=t, mesh=mesh)
+kineticv_list.append(kineticv_ini-kineticv_ini)
+PETSc.Sys.Print("kineticv =", kineticv_list)
+
+kineticuw_list = []
+kineticuw_ini = get_kinetic_energy_uw(un, rhon, t=t, mesh=mesh)
+kineticuw_list.append(kineticuw_ini-kineticuw_ini)
+PETSc.Sys.Print("kineticuw =", kineticuw_list)
+
+potential_list = []
+potential_ini = get_potential_energy(rhon, thetan, Pi0=Pi0, R_d=R_d, p_0=p_0, kappa=kappa, g=g, mesh=mesh)
+potential_list.append(potential_ini-potential_ini)
+PETSc.Sys.Print("potential =", potential_list)
+
+total_energy_list = []
+total_energy_ini = kineticv_ini + kineticuw_ini + potential_ini
+total_energy_list.append(total_energy_ini-total_energy_ini)
+PETSc.Sys.Print("total =", total_energy_list)
+
+# time loop
 PETSc.Sys.Print('tmax', tmax, 'dt', dt)
 while t < tmax - 0.5*dt:
     PETSc.Sys.Print(t)
@@ -309,11 +355,29 @@ while t < tmax - 0.5*dt:
 
     if tdiag > diagt - dt*0.5:
         # calculate and store rmsv
-        rmsv = get_rmsv(un, t=t)
+        rmsv = get_rmsv(un, t=t, mesh=mesh)
         rmsv_list.append(rmsv)
         PETSc.Sys.Print("rmsv =", rmsv_list)
+        # calculate and store kineticv
+        kineticv = get_kinetic_energy_v(un, rhon, t=t, mesh=mesh)
+        kineticv_list.append(kineticv-kineticv_ini)
+        PETSc.Sys.Print("kineticv =", kineticv_list)
+        # calculate and store kineticuw
+        kineticuw = get_kinetic_energy_uw(un, rhon, t=t, mesh=mesh)
+        kineticuw_list.append(kineticuw-kineticuw_ini)
+        PETSc.Sys.Print("kineticuw =", kineticuw_list)
+        # calculate and store potential energy
+        potential = get_potential_energy(rhon, thetan, Pi0=Pi0, R_d=R_d, p_0=p_0, kappa=kappa, g=g, mesh=mesh)
+        potential_list.append(potential-potential_ini)
+        PETSc.Sys.Print("potential =", potential_list)
+        # calculate and store total energy
+        total_energy = kineticv + kineticuw + potential
+        total_energy_list.append(total_energy-total_energy_ini)
+        PETSc.Sys.Print("total =", total_energy_list)
+
         tdiag -= diagt
 
     stepcount += 1
     itcount += nsolver.snes.getLinearSolveIterations()
+
 PETSc.Sys.Print("Iterations", itcount, "its per step", itcount/stepcount)
