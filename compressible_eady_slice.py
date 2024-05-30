@@ -10,11 +10,13 @@ parser = argparse.ArgumentParser(description='Compressible Eady test case.')
 parser.add_argument('--nlayers', type=int, default=30, help='Number of layers. Default 30.')
 parser.add_argument('--ncolumns', type=int, default=30, help='Number of columns. Default 30.')
 parser.add_argument('--c_pen', type=float, default=0., help='Diffusion coeff. Default 0.')
-parser.add_argument('--filename', type=str, default='default', help='filename for pvd')
-parser.add_argument('--tmax', type=float, default=35, help='Final time in hours. Default 24x15=360.')
+parser.add_argument('--pi0', type=float, default=0.864, help='Pi0 value. Default 0.864')
+parser.add_argument('--filename', type=str, default='comp_eady', help='filename for pvd')
+parser.add_argument('--tmax', type=float, default=35, help='Final time in days. Default 35.')
 parser.add_argument('--dumpt', type=float, default=6, help='Dump time for fields in hours. Default 6.')
 parser.add_argument('--diagt', type=float, default=2, help='Dump time for diagnostics in hours. Default 2.')
-parser.add_argument('--dt', type=float, default=60, help='Timestep in seconds. Default 60.')
+parser.add_argument('--dt', type=float, default=300, help='Timestep in seconds. Default 300.')
+parser.add_argument('--a', type=float, default=-7.5, help='Strength of the initial amplitude. Default -7.5.')
 
 args = parser.parse_known_args()
 args = args[0]
@@ -129,11 +131,12 @@ def Z(z):
 def n():
     return Bu**(-1)*fd.sqrt((Bu*0.5-fd.tanh(Bu*0.5))*(coth(Bu*0.5)-Bu*0.5))
 
-a = -4.5
+a = args.a
 Bu = 0.5
 theta_exp = a*Tsurf/g*fd.sqrt(Nsq)*(-(1.-Bu*0.5*coth(Bu*0.5))
                                  *fd.sinh(Z(z))*fd.cos(fd.pi*(x-L)/L)
                                  - n()*Bu*fd.cosh(Z(z))*fd.sin(fd.pi*(x-L)/L))
+PETSc.Sys.Print("a = ", a)
 
 # set theta0
 thetan.interpolate(thetab)
@@ -174,8 +177,9 @@ sparameters = {
 
 Pi0_value = fd.assemble(Pi_ref*fd.dx) / fd.assemble(
     fd.Constant(1.0)*fd.dx(domain=mesh))
-Pi0 = fd.Constant(Pi0_value)
-PETSc.Sys.Print("Pi0 = ", Pi0_value)
+Pi0 = fd.Constant(args.pi0)
+PETSc.Sys.Print("Pi0 = ", Pi0_value, "is calculated but, Pi0 = ",
+                args.pi0, "is used instead to keep the front less moving.")
 
 # set x-cpt of velocity
 dbdy = -1.0e-07
@@ -315,22 +319,22 @@ PETSc.Sys.Print("rmsv =", rmsv_list)
 kineticv_list = []
 kineticv_ini = get_kinetic_energy_v(un, rhon, t=t, mesh=mesh)
 kineticv_list.append(kineticv_ini-kineticv_ini)
-PETSc.Sys.Print("kineticv =", kineticv_list)
+PETSc.Sys.Print("kineticv_diff =", kineticv_list)
 
 kineticuw_list = []
 kineticuw_ini = get_kinetic_energy_uw(un, rhon, t=t, mesh=mesh)
 kineticuw_list.append(kineticuw_ini-kineticuw_ini)
-PETSc.Sys.Print("kineticuw =", kineticuw_list)
+PETSc.Sys.Print("kineticuw_diff =", kineticuw_list)
 
 potential_list = []
 potential_ini = get_potential_energy(rhon, thetan, Pi0=Pi0, R_d=R_d, p_0=p_0, kappa=kappa, g=g, mesh=mesh)
 potential_list.append(potential_ini-potential_ini)
-PETSc.Sys.Print("potential =", potential_list)
+PETSc.Sys.Print("potential_diff =", potential_list)
 
 total_energy_list = []
 total_energy_ini = kineticv_ini + kineticuw_ini + potential_ini
 total_energy_list.append(total_energy_ini-total_energy_ini)
-PETSc.Sys.Print("total =", total_energy_list)
+PETSc.Sys.Print("total_diff =", total_energy_list)
 
 # time loop
 PETSc.Sys.Print('tmax', tmax, 'dt', dt)
@@ -361,19 +365,19 @@ while t < tmax - 0.5*dt:
         # calculate and store kineticv
         kineticv = get_kinetic_energy_v(un, rhon, t=t, mesh=mesh)
         kineticv_list.append(kineticv-kineticv_ini)
-        PETSc.Sys.Print("kineticv =", kineticv_list)
+        PETSc.Sys.Print("kineticv_diff =", kineticv_list)
         # calculate and store kineticuw
         kineticuw = get_kinetic_energy_uw(un, rhon, t=t, mesh=mesh)
         kineticuw_list.append(kineticuw-kineticuw_ini)
-        PETSc.Sys.Print("kineticuw =", kineticuw_list)
+        PETSc.Sys.Print("kineticuw_diff =", kineticuw_list)
         # calculate and store potential energy
         potential = get_potential_energy(rhon, thetan, Pi0=Pi0, R_d=R_d, p_0=p_0, kappa=kappa, g=g, mesh=mesh)
         potential_list.append(potential-potential_ini)
-        PETSc.Sys.Print("potential =", potential_list)
+        PETSc.Sys.Print("potential_diff =", potential_list)
         # calculate and store total energy
         total_energy = kineticv + kineticuw + potential
         total_energy_list.append(total_energy-total_energy_ini)
-        PETSc.Sys.Print("total =", total_energy_list)
+        PETSc.Sys.Print("total_diff =", total_energy_list)
 
         tdiag -= diagt
 
