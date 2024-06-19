@@ -487,7 +487,8 @@ elif args.solver_mode == 'patch':
     sparameters = {
         "snes_monitor": None,
         "snes_converged_reason": None,
-        "snes_atol": 1e5,
+        "snes_atol": 1e-50,
+        "snes_stol": 1e-50,
         # "snes_max_it": 1,
         # "snes_convergence_test": "skip",
         #"snes_lag_jacobian": -2,
