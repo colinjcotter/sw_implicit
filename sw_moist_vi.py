@@ -17,6 +17,7 @@ parser.add_argument('--coords_degree', type=int, default=1, help='Degree of poly
 parser.add_argument('--degree', type=int, default=1, help='Degree of finite element space (the DG space).')
 parser.add_argument('--kspmg', type=int, default=3, help='Max number of KSP iterations in the MG levels. Default 3.')
 parser.add_argument('--show_args', action='store_true', help='Output all the arguments.')
+parser.add_argument('--bounds', action='store_true', help='Apply the bounds constraints.')
 
 args = parser.parse_known_args()
 args = args[0]
@@ -250,6 +251,18 @@ sparameters = {
     #"mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
 }
 
+lbound = fd.Function(W).assign(PETSc.NINFINITY)
+ubound = fd.Function(W).assign(PETSc.INFINITY)
+
+# 0   1   2      3     4    5
+# u0, D0, buoy0, qvp0, qc0, qr0 = fd.split(Un)
+
+if args.bounds:
+    solver_parameters["snes_type"] = "vinewtonrsls"
+    ubound.sub(3).assign(0.) #  qprime <= 0
+    ubound.sub(4).assign(q_precip) #  qc <= q_precip
+    
+
 dt = 60*60*args.dt
 dT.assign(dt)
 t = 0.
@@ -378,7 +391,7 @@ while t < tmax + 0.5*dt:
     tdump += dt
 
     with PETSc.Log.Event("nsolver"):
-        nsolver.solve()
+        nsolver.solve(bounds = (lbound, ubound))
     Un.assign(Unp1)
     
     if tdump > dumpt - dt*0.5:
