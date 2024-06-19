@@ -6,7 +6,7 @@ from firedrake.output import VTKFile
 PETSc.Sys.popErrorHandler()
 import mg
 import argparse
-parser = argparse.ArgumentParser(description='Moist Williamson 5 testcase')
+parser = argparse.ArgumentParser(description='Moist Williamson 5 testcase using VI formulation.')
 parser.add_argument('--base_level', type=int, default=1, help='Base refinement level of icosahedral grid for MG solve. Default 1.')
 parser.add_argument('--ref_level', type=int, default=5, help='Refinement level of icosahedral grid. Default 5.')
 parser.add_argument('--dmax', type=float, default=15, help='Final time in days. Default 15.')
@@ -99,8 +99,10 @@ dx = fd.dx
 Un = fd.Function(W)
 Unp1 = fd.Function(W)
 
-u0, D0, buoy0, qv0, qc0, qr0 = fd.split(Un)
-u1, D1, buoy1, qv1, qc1, qr1  = fd.split(Unp1)
+#variable is now qvp - qv = qsat + qv
+
+u0, D0, buoy0, qvp0, qc0, qr0 = fd.split(Un)
+u1, D1, buoy1, qvp1, qc1, qr1  = fd.split(Unp1)
 n = fd.FacetNormal(mesh)
 
 
@@ -151,8 +153,8 @@ def q_op(phi, u, q):
 #qrh = 0.5*(qr0 + qr1)
 
 # du, dD, dbuoy, dqv, dqc, dqr = fd.TestFunctions(W)
-# u0, D0, buoy0, qv0, qc0, qr0 = fd.split(Un)
-# u1, D1, buoy1, qv1, qc1, qr1  = fd.split(Unp1)
+# u0, D0, buoy0, qvp0, qc0, qr0 = fd.split(Un)
+# u1, D1, buoy1, qvp1, qc1, qr1  = fd.split(Unp1)
 
 q0 = fd.Constant(135)
 L = fd.Constant(10)
@@ -165,18 +167,20 @@ dx0 = dx('everywhere', metadata = {'quadrature_degree': 4,
 #dS = dS('everywhere', metadata = {'quadrature_degree': 4,
 #                                  'representation': 'quadrature'})
 
-def del_qv(qv, D, buoy):
-    qsat = q0/g/(D + b)*fd.exp(20*(1-buoy/g))
-    gamma_v = 1/(1 + L*20*q0/g/(D + b)*fd.exp(20*(1-buoy/g)))
-    return fd.max_value(0, gamma_v*(qv - qsat))/dT
+def qsat(D, buoy):
+    return q0/g/(D + b)*fd.exp(20*(1-buoy/g))
 
-def del_qc(qc, qv, D, buoy):
-    qsat = q0/g/(D + b)*fd.exp(20*(1-buoy/g))
-    gamma_v = 1/(1 + L*20*q0/g/(D + b)*fd.exp(20*(1-buoy/g)))
-    return fd.min_value(qc, fd.max_value(0, gamma_v*(qsat - qv)))/dT
+bouyT0 = buoy0 + L*(qsat(D0, buoy0) + qvp0)
+bouyT1 = buoy1 + L*(qsat(D1, buoy1) + qvp1)
 
-def del_qr(qc):
-    return fd.max_value(0, gamma_r*(qc - q_precip))/dT
+qv0 = qsat(D0, bouy0) + qvp0
+qv1 = qsat(D1, bouy1) + qvp1
+
+qcv0 = qv0 + qc0
+qcv1 = qv1 + qc1
+
+qcvr0 = qcv0 + qr0
+qcvr1 = qcv1 + qr1
 
 eqn = (
     fd.inner(du, u1 - u0)*dx
@@ -187,49 +191,23 @@ eqn = (
     + 0.5*dT*h_op(dD, u0, D0)
     + 0.5*dT*h_op(dD, u1, D1)
 
-    + dbuoy*(buoy1 - buoy0)*dx
-    + 0.5*dT*q_op(dbuoy, u0, buoy0)
-    + 0.5*dT*q_op(dbuoy, u1, buoy1)
-    + 0.5*dT*g*L*dbuoy*(del_qv(qv0, D0, buoy0)
-                        - del_qc(qc0, qv0, D0, buoy0))*dx0 #  buoyancy source
-    + 0.5*dT*g*L*dbuoy*(del_qv(qv1, D1, buoy1)
-                        - del_qc(qc1, qv1, D1, buoy1))*dx0 #  buoyancy source
+    + dbuoy*(buoyT1 - buoyT0)*dx
+    + 0.5*dT*q_op(dbuoy, u0, buoyT0)
+    + 0.5*dT*q_op(dbuoy, u1, buoyT1)
 
     + dqv*(qv1 - qv0)*dx
     + 0.5*dT*q_op(dqv, u0, qv0)
     + 0.5*dT*q_op(dqv, u1, qv1)
-    - 0.5*dT*dqv*(del_qc(qc0, qv0, D0, buoy0)
-                  - del_qv(qv0, D0, buoy0))*dx0 #  qv source
-    - 0.5*dT*dqv*(del_qc(qc1, qv1, D1, buoy1)
-                  - del_qv(qv1, D1, buoy1))*dx0 #  qv source
+    - 0.5*dT*gamma_r*(qc0 + qc1)
 
-    + dqc*(qc1 - qc0)*dx
-    + 0.5*dT*q_op(dqc, u0, qc0)
-    + 0.5*dT*q_op(dqc, u1, qc1)
-    - 0.5*dT*dqc*(del_qv(qv0, D0, buoy=buoy0)
-              - del_qc(qc0, qv0, D0, buoy0)
-              - del_qr(qc0))*dx0 #  qc source
-    - 0.5*dT*dqc*(del_qv(qv1, D1, buoy=buoy1)
-              - del_qc(qc1, qv1, D1, buoy1)
-              - del_qr(qc1))*dx0 #  qc source
+    + dqc*(qcv1 - qcv0)*dx
+    + 0.5*dT*q_op(dqcv, u0, qc0)
+    + 0.5*dT*q_op(dqcv, u1, qc1)
 
-    + dqr*(qr1 - qr0)*dx
-    + 0.5*dT*q_op(dqr, u0, qr0)
-    + 0.5*dT*q_op(dqr, u1, qr1)
-    - 0.5*dT*dqr*del_qr(qc0)*dx0 #  qr source
-    - 0.5*dT*dqr*del_qr(qc1)*dx0 #  qr source
+    + dqr*(qcvr1 - qcvr0)*dx
+    + 0.5*dT*q_op(dqr, u0, qcvr0)
+    + 0.5*dT*q_op(dqr, u1, qcvr1)
 )
-    
-# U_t + N(U) = 0
-# IMPLICIT MIDPOINT
-# U^{n+1} - U^n + dt*N( (U^{n+1}+U^n)/2 ) = 0.
-
-# Newton's method
-# f(x) = 0, f:R^M -> R^M
-# [Df(x)]_{i,j} = df_i/dx_j
-# x^0, x^1, ...
-# Df(x^k).xp = -f(x^k)
-# x^{k+1} = x^k + xp.
 
 # monolithic solver options
 
@@ -362,7 +340,7 @@ buoy0.interpolate(buoyexpr)
 # expression for initial water vapour depends on initial saturation
 initial_msat = q0/(g*D0 + g*bexpr) * fd.exp(20*theta_expr)
 vexpr = mu2 * initial_msat
-qv0.interpolate(vexpr)
+qvp0.interpolate(vexpr - qsat(D0, buoy0))
 # cloud and rain initially zero
 
 q = fd.TrialFunction(V0)
@@ -384,7 +362,7 @@ qvn = fd.Function(V2, name="Water Vapour")
 qcn = fd.Function(V2, name="Cloud Vapour")
 qrn = fd.Function(V2, name="Rain")
 Dn.interpolate(D0)
-qvn.interpolate(qv0)
+qvn.interpolate(qv0 + qsat(D0, buoy0)
 qcn.interpolate(qc0)
 qrn.interpolate(qr0)
 buoyn.interpolate(buoy0)
@@ -408,7 +386,7 @@ while t < tmax + 0.5*dt:
         un.assign(u0)
         qsolver.solve()
         buoyn.interpolate(buoy0)
-        qvn.interpolate(qv0)
+        qvn.interpolate(qv0 + qstat(D0, buoy0))
         qcn.interpolate(qc0)
         qrn.interpolate(qr0)
         file_sw.write(un, etan, buoyn, qn, qvn, qcn, qrn)
