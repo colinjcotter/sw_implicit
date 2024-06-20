@@ -12,7 +12,7 @@ parser.add_argument('--ref_level', type=int, default=5, help='Refinement level o
 parser.add_argument('--dmax', type=float, default=15, help='Final time in days. Default 15.')
 parser.add_argument('--dumpt', type=float, default=24, help='Dump time in hours. Default 24.')
 parser.add_argument('--dt', type=float, default=1, help='Timestep in hours. Default 1')
-parser.add_argument('--filename', type=str, default='w5moist')
+parser.add_argument('--filename', type=str, default='w5moistvi')
 parser.add_argument('--coords_degree', type=int, default=1, help='Degree of polynomials for sphere mesh approximation.')
 parser.add_argument('--degree', type=int, default=1, help='Degree of finite element space (the DG space).')
 parser.add_argument('--kspmg', type=int, default=3, help='Max number of KSP iterations in the MG levels. Default 3.')
@@ -80,10 +80,10 @@ degree = args.degree
 V1 = fd.FunctionSpace(mesh, "BDM", degree+1)
 V2 = fd.FunctionSpace(mesh, "DG", degree)
 V0 = fd.FunctionSpace(mesh, "CG", degree+2)
-W = fd.MixedFunctionSpace((V1, V2, V2, V2, V2, V2))
-# velocity, depth, temperature, vapour, cloud, rain
+W = fd.MixedFunctionSpace((V1, V2, V2, V2, V2, V2, V2))
+# velocity, depth, temperature, qsat, vapour, cloud, rain
 
-du, dD, dbuoy, dqv, dqc, dqr = fd.TestFunctions(W)
+du, dD, dbuoy, dqsat, dqv, dqc, dqr = fd.TestFunctions(W)
 
 Omega = fd.Constant(7.292e-5)  # rotation rate
 f = 2*Omega*cz/fd.Constant(R0)  # Coriolis parameter
@@ -102,8 +102,8 @@ Unp1 = fd.Function(W)
 
 #variable is now qvp - qv = qsat + qv
 
-u0, D0, buoy0, qvp0, qc0, qr0 = fd.split(Un)
-u1, D1, buoy1, qvp1, qc1, qr1  = fd.split(Unp1)
+u0, D0, buoy0, qsat0, qvp0, qc0, qr0 = fd.split(Un)
+u1, D1, buoy1, qsat1, qvp1, qc1, qr1  = fd.split(Unp1)
 n = fd.FacetNormal(mesh)
 
 
@@ -145,17 +145,9 @@ def q_op(phi, u, q):
             + fd.jump(phi)*(uup('+')*q('+')
                             - uup('-')*q('-'))*dS)
 
-"implicit midpoint rule"
-#uh = 0.5*(u0 + u1)
-#Dh = 0.5*(D0 + D1)
-#buoyh = 0.5*(buoy0 + buoy1)
-#qvh = 0.5*(qv0 + qv1)
-#qch = 0.5*(qc0 + qc1)
-#qrh = 0.5*(qr0 + qr1)
-
-# du, dD, dbuoy, dqv, dqc, dqr = fd.TestFunctions(W)
-# u0, D0, buoy0, qvp0, qc0, qr0 = fd.split(Un)
-# u1, D1, buoy1, qvp1, qc1, qr1  = fd.split(Unp1)
+# du, dD, dbuoy, dqsat, dqv, dqc, dqr = fd.TestFunctions(W)
+# u0, D0, buoy0, qsat0, qvp0, qc0, qr0 = fd.split(Un)
+# u1, D1, buoy1, qsat1, qvp1, qc1, qr1  = fd.split(Unp1)
 
 q0 = fd.Constant(135)
 L = fd.Constant(10)
@@ -171,11 +163,11 @@ dx0 = dx('everywhere', metadata = {'quadrature_degree': 4,
 def qsat(D, buoy):
     return q0/g/(D + b)*fd.exp(20*(1-buoy/g))
 
-bouyT0 = buoy0 + L*(qsat(D0, buoy0) + qvp0)
-bouyT1 = buoy1 + L*(qsat(D1, buoy1) + qvp1)
+qv0 = qsat0 + qvp0
+qv1 = qsat0 + qvp1
 
-qv0 = qsat(D0, bouy0) + qvp0
-qv1 = qsat(D1, bouy1) + qvp1
+buoyT0 = buoy0 + L*qv0
+buoyT1 = buoy1 + L*qv1
 
 qcv0 = qv0 + qc0
 qcv1 = qv1 + qc1
@@ -183,38 +175,44 @@ qcv1 = qv1 + qc1
 qcvr0 = qcv0 + qr0
 qcvr1 = qcv1 + qr1
 
+alpha = fd.Constant(0.5) # offcentering parameter (1.0 = BE)
+
+gamma_r.assign(0.)
+
 eqn = (
     fd.inner(du, u1 - u0)*dx
-    + 0.5*dT*u_op(du, u0, D0, buoy0)
-    + 0.5*dT*u_op(du, u1, D1, buoy1)
+    + (1-alpha)*dT*u_op(du, u0, D0, buoy0)
+    + alpha*dT*u_op(du, u1, D1, buoy1)
 
     + dD*(D1 - D0)*dx
-    + 0.5*dT*h_op(dD, u0, D0)
-    + 0.5*dT*h_op(dD, u1, D1)
+    + (1-alpha)*dT*h_op(dD, u0, D0)
+    + alpha*dT*h_op(dD, u1, D1)
 
     + dbuoy*(buoyT1 - buoyT0)*dx
-    + 0.5*dT*q_op(dbuoy, u0, buoyT0)
-    + 0.5*dT*q_op(dbuoy, u1, buoyT1)
+    + (1-alpha)*dT*q_op(dbuoy, u0, buoyT0)
+    + alpha*dT*q_op(dbuoy, u1, buoyT1)
 
+    + dqsat*(qsat1 - qsat(D1, buoy1))*fd.dx
+    
     + dqv*(qv1 - qv0)*dx
-    + 0.5*dT*q_op(dqv, u0, qv0)
-    + 0.5*dT*q_op(dqv, u1, qv1)
-    - 0.5*dT*gamma_r*(qc0 + qc1)
+    + (1-alpha)*dT*q_op(dqv, u0, qv0)
+    + alpha*dT*q_op(dqv, u1, qv1)
+    - dT*gamma_r*dqv*((1-alpha)*qc0 + alpha*qc1)*fd.dx
 
     + dqc*(qcv1 - qcv0)*dx
-    + 0.5*dT*q_op(dqcv, u0, qc0)
-    + 0.5*dT*q_op(dqcv, u1, qc1)
+    + (1-alpha)*dT*q_op(dqv, u0, qcv0)
+    + alpha*dT*q_op(dqv, u1, qcv1)
 
     + dqr*(qcvr1 - qcvr0)*dx
-    + 0.5*dT*q_op(dqr, u0, qcvr0)
-    + 0.5*dT*q_op(dqr, u1, qcvr1)
+    + (1-alpha)*dT*q_op(dqr, u0, qcvr0)
+    + alpha*dT*q_op(dqr, u1, qcvr1)
 )
 
 # monolithic solver options
 
 sparameters = {
     "snes_monitor": None,
-    "mat_type": "matfree",
+    #"mat_type": "matfree",
     "ksp_type": "gmres",
     #"ksp_monitor_true_residual": None,
     "ksp_converged_reason": None,
@@ -248,8 +246,16 @@ sparameters = {
     "mg_coarse_pc_type": "python",
     "mg_coarse_pc_python_type": "firedrake.AssembledPC",
     "mg_coarse_assembled_pc_type": "lu",
-    #"mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
+    "mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
 }
+
+asparameters = {
+    "snes_monitor": None,
+    "ksp_type": "gmres",
+    "pc_type": "lu",
+    "pc_factor_mat_solver_type": "mumps"
+}
+
 
 lbound = fd.Function(W).assign(PETSc.NINFINITY)
 ubound = fd.Function(W).assign(PETSc.INFINITY)
@@ -258,10 +264,9 @@ ubound = fd.Function(W).assign(PETSc.INFINITY)
 # u0, D0, buoy0, qvp0, qc0, qr0 = fd.split(Un)
 
 if args.bounds:
-    solver_parameters["snes_type"] = "vinewtonrsls"
+    sparameters["snes_type"] = "vinewtonrsls"
     ubound.sub(3).assign(0.) #  qprime <= 0
     ubound.sub(4).assign(q_precip) #  qc <= q_precip
-    
 
 dt = 60*60*args.dt
 dT.assign(dt)
@@ -309,7 +314,7 @@ minarg = fd.min_value(pow(rl, 2),
 bexpr = 2000.0*(1 - fd.sqrt(minarg)/rl)
 b.interpolate(bexpr)
 
-u0, D0, buoy0, qv0, qc0, qr0n = Un.subfunctions
+u0, D0, buoy0, qvp0, qc0, qr0n = Un.subfunctions
 u0.assign(un)
 D0.assign(etan + H - b)
 
@@ -353,7 +358,8 @@ buoy0.interpolate(buoyexpr)
 # expression for initial water vapour depends on initial saturation
 initial_msat = q0/(g*D0 + g*bexpr) * fd.exp(20*theta_expr)
 vexpr = mu2 * initial_msat
-qvp0.interpolate(vexpr - qsat(D0, buoy0))
+qsat0.project(qsat(D0, buoy))
+qvp0.project(vexpr - qsat0)
 # cloud and rain initially zero
 
 q = fd.TrialFunction(V0)
@@ -375,7 +381,7 @@ qvn = fd.Function(V2, name="Water Vapour")
 qcn = fd.Function(V2, name="Cloud Vapour")
 qrn = fd.Function(V2, name="Rain")
 Dn.interpolate(D0)
-qvn.interpolate(qv0 + qsat(D0, buoy0)
+qvn.project(qvp0 + qsat(D0, buoy0))
 qcn.interpolate(qc0)
 qrn.interpolate(qr0)
 buoyn.interpolate(buoy0)
@@ -387,11 +393,15 @@ itcount = 0
 stepcount = 0
 while t < tmax + 0.5*dt:
     PETSc.Sys.Print(t)
+    PETSc.Sys.Print("rain", fd.norm(qr0), "cloud", fd.norm(qc0))
     t += dt
     tdump += dt
 
     with PETSc.Log.Event("nsolver"):
-        nsolver.solve(bounds = (lbound, ubound))
+        if args.bounds:
+            nsolver.solve(bounds=(lbound, ubound))
+        else:
+            nsolver.solve()
     Un.assign(Unp1)
     
     if tdump > dumpt - dt*0.5:
@@ -399,7 +409,7 @@ while t < tmax + 0.5*dt:
         un.assign(u0)
         qsolver.solve()
         buoyn.interpolate(buoy0)
-        qvn.interpolate(qv0 + qstat(D0, buoy0))
+        qvn.project(qvp0 + qsat0)
         qcn.interpolate(qc0)
         qrn.interpolate(qr0)
         file_sw.write(un, etan, buoyn, qn, qvn, qcn, qrn)
