@@ -164,7 +164,7 @@ def qsat(D, buoy):
     return q0/g/(D + b)*fd.exp(20*(1-buoy/g))
 
 qv0 = qsat0 + qvp0
-qv1 = qsat0 + qvp1
+qv1 = qsat1 + qvp1
 
 buoyT0 = buoy0 + L*qv0
 buoyT1 = buoy1 + L*qv1
@@ -314,7 +314,7 @@ minarg = fd.min_value(pow(rl, 2),
 bexpr = 2000.0*(1 - fd.sqrt(minarg)/rl)
 b.interpolate(bexpr)
 
-u0, D0, buoy0, qvp0, qc0, qr0n = Un.subfunctions
+u0, D0, buoy0, qsat0, qvp0, qc0, qr0n = Un.subfunctions
 u0.assign(un)
 D0.assign(etan + H - b)
 
@@ -358,7 +358,7 @@ buoy0.interpolate(buoyexpr)
 # expression for initial water vapour depends on initial saturation
 initial_msat = q0/(g*D0 + g*bexpr) * fd.exp(20*theta_expr)
 vexpr = mu2 * initial_msat
-qsat0.project(qsat(D0, buoy))
+qsat0.project(qsat(D0, buoy0))
 qvp0.project(vexpr - qsat0)
 # cloud and rain initially zero
 
