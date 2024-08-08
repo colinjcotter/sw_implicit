@@ -80,10 +80,13 @@ degree = args.degree
 V1 = fd.FunctionSpace(mesh, "BDM", degree+1)
 V2 = fd.FunctionSpace(mesh, "DG", degree)
 V0 = fd.FunctionSpace(mesh, "CG", degree+2)
-W = fd.MixedFunctionSpace((V1, V2, V2, V2, V2, V2, V2))
-# velocity, depth, temperature, qsat, vapour, cloud, rain
+W = fd.MixedFunctionSpace((V1, V2, V2,
+                           V2, V2,
+                           V2, V2))
+# velocity, depth, total temperature, vapour, evaporation rate, cloud condensation rate, cloud
+# NO RAIN AT THE MOMENT
 
-du, dD, dbuoy, dqsat, dqv, dqc, dqr = fd.TestFunctions(W)
+du, dD, dbuoy, dqv, dRe, dRc, dqc = fd.TestFunctions(W)
 
 Omega = fd.Constant(7.292e-5)  # rotation rate
 f = 2*Omega*cz/fd.Constant(R0)  # Coriolis parameter
@@ -100,10 +103,8 @@ dx = fd.dx
 Un = fd.Function(W)
 Unp1 = fd.Function(W)
 
-#variable is now qvp - qv = qsat + qv
-
-u0, D0, buoy0, qsat0, qvp0, qc0, qr0 = fd.split(Un)
-u1, D1, buoy1, qsat1, qvp1, qc1, qr1  = fd.split(Unp1)
+u0, D0, buoy0, qv0, Re0, qc0, Rc0 = fd.split(Un)
+u1, D1, buoy1, qv1, Re1, qc1, Rc1 = fd.split(Unp1)
 n = fd.FacetNormal(mesh)
 
 
@@ -145,10 +146,6 @@ def q_op(phi, u, q):
             + fd.jump(phi)*(uup('+')*q('+')
                             - uup('-')*q('-'))*dS)
 
-# du, dD, dbuoy, dqsat, dqv, dqc, dqr = fd.TestFunctions(W)
-# u0, D0, buoy0, qsat0, qvp0, qc0, qr0 = fd.split(Un)
-# u1, D1, buoy1, qsat1, qvp1, qc1, qr1  = fd.split(Unp1)
-
 q0 = fd.Constant(135)
 L = fd.Constant(10)
 gamma_r = fd.Constant(1.0e-3)
@@ -163,21 +160,18 @@ dx0 = dx('everywhere', metadata = {'quadrature_degree': 4,
 def qsat(D, buoy):
     return q0/g/(D + b)*fd.exp(20*(1-buoy/g))
 
-qv0 = qsat0 + qvp0
-qv1 = qsat1 + qvp1
+#u0, D0, buoy0, qv0, Re0, qc0, Rc0 = fd.split(Un)
+#u1, D1, buoy1, qv1, Re1, qc1, Rc1 = fd.split(Unp1)
+#du, dD, dbuoy, dqv, dRe, dRc, dqc = fd.TestFunctions(W)
 
-buoyT0 = buoy0 + L*qv0
-buoyT1 = buoy1 + L*qv1
-
-qcv0 = qv0 + qc0
-qcv1 = qv1 + qc1
-
-qcvr0 = qcv0 + qr0
-qcvr1 = qcv1 + qr1
+# b = g(1-theta)
+# theta_T = theta + Lq_v
+# theta = theta_T - Lq_v
+# b = g(1-theta_T) + gLq_v
+buoyT0 = buoy0 + g*L*qv0
+buoyT1 = buoy1 + g*L*qv1
 
 alpha = fd.Constant(0.5) # offcentering parameter (1.0 = BE)
-
-gamma_r.assign(0.)
 
 eqn = (
     fd.inner(du, u1 - u0)*dx
@@ -192,26 +186,26 @@ eqn = (
     + (1-alpha)*dT*q_op(dbuoy, u0, buoyT0)
     + alpha*dT*q_op(dbuoy, u1, buoyT1)
 
-    + dqsat*(qsat1 - qsat(D1, buoy1))*fd.dx
-    
+    + dRe*(qsat(D1, buoy1) - qv1)*fd.dx
+
     + dqv*(qv1 - qv0)*dx
     + (1-alpha)*dT*q_op(dqv, u0, qv0)
     + alpha*dT*q_op(dqv, u1, qv1)
-    - dT*gamma_r*dqv*((1-alpha)*qc0 + alpha*qc1)*fd.dx
+    + dT*Re1*fd.dx  #  evaporation rate
+
+    + dRc*
 
     + dqc*(qcv1 - qcv0)*dx
     + (1-alpha)*dT*q_op(dqv, u0, qcv0)
     + alpha*dT*q_op(dqv, u1, qcv1)
-
-    + dqr*(qcvr1 - qcvr0)*dx
-    + (1-alpha)*dT*q_op(dqr, u0, qcvr0)
-    + alpha*dT*q_op(dqr, u1, qcvr1)
+    + dT*Rc1*fd.dx
 )
 
 # monolithic solver options
 
 sparameters = {
     "snes_monitor": None,
+    "snes_vi_monitor": None,
     #"mat_type": "matfree",
     "ksp_type": "gmres",
     #"ksp_monitor_true_residual": None,
@@ -219,7 +213,7 @@ sparameters = {
     #"ksp_view": None,
     "snes_stol": 1e-50,
     "snes_atol": 1e-50,
-    "snes_rtol": 1e-8,
+    "snes_rtol": 1e-10,
     "ksp_atol": 1e-50,
     "ksp_rtol": 1e-6,
     "ksp_max_it": 400,
@@ -249,8 +243,9 @@ sparameters = {
     "mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
 }
 
-asparameters = {
+sparameters = {
     "snes_monitor": None,
+    "snes_vi_monitor": None,
     "ksp_type": "gmres",
     "pc_type": "lu",
     "pc_factor_mat_solver_type": "mumps"
@@ -260,13 +255,13 @@ asparameters = {
 lbound = fd.Function(W).assign(PETSc.NINFINITY)
 ubound = fd.Function(W).assign(PETSc.INFINITY)
 
-# 0   1   2      3     4    5
-# u0, D0, buoy0, qvp0, qc0, qr0 = fd.split(Un)
+# 0   1   2      3     4    5      6
+# u0, D0, buoy0, qsat0, qvp0, qc0, qr0 = fd.split(Un)
 
 if args.bounds:
     sparameters["snes_type"] = "vinewtonrsls"
-    ubound.sub(3).assign(0.) #  qprime <= 0
-    ubound.sub(4).assign(q_precip) #  qc <= q_precip
+    ubound.sub(4).assign(0.) #  qprime <= 0
+    ubound.sub(5).assign(q_precip) #  qc <= q_precip
 
 dt = 60*60*args.dt
 dT.assign(dt)
@@ -391,9 +386,13 @@ Unp1.assign(Un)
 PETSc.Sys.Print('tmax', tmax, 'dt', dt)
 itcount = 0
 stepcount = 0
+
+One = fd.Function(V2).assign(1.0)
+Area = fd.assemble(One*fd.dx)
+
 while t < tmax + 0.5*dt:
     PETSc.Sys.Print(t)
-    PETSc.Sys.Print("rain", fd.norm(qr0), "cloud", fd.norm(qc0))
+    PETSc.Sys.Print("rain", fd.norm(qr0)/Area, "cloud", fd.norm(qc0)/Area)
     t += dt
     tdump += dt
 
