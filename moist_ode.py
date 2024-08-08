@@ -26,14 +26,14 @@ eqn = (
     dq_v*(q1_v - q0_v
           + dtc*(R1_c - R1_e))
     + dR_c*(qsat - q1_v)
-    + dR_e*(qsat - q1_v)*(q_T - q1_v)
+    + dR_e*(qsat - q1_v)*(q_T - q1_v -R1_e)
     )*dx
 
 # variational solver
 params = {
     "snes_type": "vinewtonrsls",
-    "snes_vi_monitor": None,
-    "snes_monitor": None,
+    #"snes_vi_monitor": None,
+    #"snes_monitor": None,
     "mat_type": "aij",
     "ksp_type": "preonly",
     "pc_type": "lu",
@@ -60,7 +60,8 @@ t = 0.
 U1.assign(U0)
 while t < T - dt:
     nsolver.solve(bounds=(lbound, ubound))
+    U0.assign(U1)
+    print(t, q0_v.dat.data[:], float(qsat),
+          R0_c.dat.data[:], R0_e.dat.data[:])
     t += dt
     tc.assign(t)
-    U1.assign(U0)
-    print(t, q0_v.dat.data[:])
