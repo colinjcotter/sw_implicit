@@ -13,7 +13,7 @@ parser.add_argument('--c_pen', type=float, default=0., help='Diffusion coeff. De
 parser.add_argument('--pi0', type=float, default=0.864, help='Pi0 value. Default 0.864')
 parser.add_argument('--filename', type=str, default='comp_eady', help='filename for pvd')
 parser.add_argument('--tmax', type=float, default=35, help='Final time in days. Default 35.')
-parser.add_argument('--dumpt', type=float, default=6, help='Dump time for fields in hours. Default 6.')
+parser.add_argument('--dumpt', type=float, default=2, help='Dump time for fields in hours. Default 6.')
 parser.add_argument('--diagt', type=float, default=2, help='Dump time for diagnostics in hours. Default 2.')
 parser.add_argument('--dt', type=float, default=300, help='Timestep in seconds. Default 300.')
 parser.add_argument('--a', type=float, default=-7.5, help='Strength of the initial amplitude. Default -7.5.')
@@ -266,7 +266,10 @@ Courant = fd.Function(DG0, name="Courant")
 fd.assemble(Courant_num_form, tensor=Courant_num)
 Courant.interpolate(Courant_num/Courant_denom)
 
-file_eady.write(un, rhon, thetan, delta_rho, delta_theta, Courant)
+divu = fd.Function(DG0, name="div(u)")
+divu.interpolate(div(un))
+
+file_eady.write(un, rhon, thetan, delta_rho, delta_theta, Courant, divu)
 Unp1.assign(Un)
 
 t = 0.
@@ -275,16 +278,32 @@ tdiag = 0.
 itcount = 0
 stepcount = 0
 
+# calculate maximum v
+def get_max_v(un, t, mesh):
+    y_vec = fd.as_vector([0., 1., 0.])
+    y_vel = fd.inner(un, y_vec)
+    DG0 = fd.FunctionSpace(mesh, "DG", 0)
+    y_vel_dg0 = fd.Function(DG0).project(y_vel)
+    max_v = maximum(y_vel_dg0)
+    return max_v
+
 # calculate rms of v
-def get_rmsv(un, t, mesh):
+def get_rms_v(un, t, mesh):
     y_vec = fd.as_vector([0., 1., 0.])
     y_vel = fd.inner(un, y_vec)
     DG0 = fd.FunctionSpace(mesh, "DG", 0)
     c = fd.Function(DG0)
     c.assign(1)
-    rmsv = fd.sqrt(fd.assemble((fd.dot(y_vel,y_vel))*dx)/fd.assemble(c*dx))
-    PETSc.Sys.Print("rmsv = ", rmsv, "t = ", t)
-    return rmsv
+    rms_v = fd.sqrt(fd.assemble((fd.dot(y_vel,y_vel))*dx)/fd.assemble(c*dx))
+    return rms_v
+
+# calculate rms of div(u)
+def get_rms_divu(un, t, mesh):
+    DG0 = fd.FunctionSpace(mesh, "DG", 0)
+    c = fd.Function(DG0)
+    c.assign(1)
+    rms_divu = fd.sqrt(fd.assemble((fd.dot(div(un),div(un)))*dx)/fd.assemble(c*dx))
+    return rms_divu
 
 # calculate v kinetic energy
 def get_kinetic_energy_v(un, rhon, t, mesh):
@@ -311,10 +330,20 @@ def get_potential_energy(rhon, thetan, Pi0, R_d, p_0, kappa, g, mesh):
     return potential
 
 # store diagnostics at the initial stage
-rmsv_list = []
-rmsv = get_rmsv(un, t=t, mesh=mesh)
-rmsv_list.append(rmsv)
-PETSc.Sys.Print("rmsv =", rmsv_list)
+max_v_list = []
+max_v = get_max_v(un, t=t, mesh=mesh)
+max_v_list.append(max_v)
+PETSc.Sys.Print("max_v =", max_v_list)
+
+rms_v_list = []
+rms_v = get_rms_v(un, t=t, mesh=mesh)
+rms_v_list.append(rms_v)
+PETSc.Sys.Print("rms_v =", rms_v_list)
+
+rms_divu_list = []
+rms_divu = get_rms_divu(un, t=t, mesh=mesh)
+rms_divu_list.append(rms_divu)
+PETSc.Sys.Print("rms_divu =", rms_divu_list)
 
 kineticv_list = []
 kineticv_ini = get_kinetic_energy_v(un, rhon, t=t, mesh=mesh)
@@ -353,15 +382,26 @@ while t < tmax - 0.5*dt:
 
         fd.assemble(Courant_num_form, tensor=Courant_num)
         Courant.interpolate(Courant_num/Courant_denom)
+
+        divu.interpolate(div(un))
+
         file_eady.write(un, rhon, thetan, delta_rho, delta_theta,
-                      Courant)
+                        Courant, divu)
         tdump -= dumpt
 
     if tdiag > diagt - dt*0.5:
-        # calculate and store rmsv
-        rmsv = get_rmsv(un, t=t, mesh=mesh)
-        rmsv_list.append(rmsv)
-        PETSc.Sys.Print("rmsv =", rmsv_list)
+        # calculate and store max_v
+        max_v = get_max_v(un, t=t, mesh=mesh)
+        max_v_list.append(max_v)
+        PETSc.Sys.Print("max_v =", max_v_list)
+        # calculate and store rms_v
+        rms_v = get_rms_v(un, t=t, mesh=mesh)
+        rms_v_list.append(rms_v)
+        PETSc.Sys.Print("rms_v =", rms_v_list)
+        # calculate and store rms_divu
+        rms_divu = get_rms_divu(un, t=t, mesh=mesh)
+        rms_divu_list.append(rms_divu)
+        PETSc.Sys.Print("rms_divu =", rms_divu_list)
         # calculate and store kineticv
         kineticv = get_kinetic_energy_v(un, rhon, t=t, mesh=mesh)
         kineticv_list.append(kineticv-kineticv_ini)
