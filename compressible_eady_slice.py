@@ -255,7 +255,8 @@ dT.assign(dt)
 
 DG0 = FunctionSpace(mesh, "DG", 0)
 One = Function(DG0).assign(1.0)
-unn = 0.5*(inner(-un, n) + abs(inner(-un, n))) # gives fluxes *into* cell only
+n1 = as_vector([n[0], 0, n[2]])
+unn = 0.5*(inner(-un, n1) + abs(inner(-un, n1))) # gives fluxes *into* cell only
 v = TestFunction(DG0)
 Courant_num = Function(DG0, name="Courant numerator")
 Courant_num_form = dT*(
