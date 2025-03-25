@@ -12,13 +12,15 @@ parser.add_argument('--ncolumns', type=int, default=30, help='Number of columns.
 parser.add_argument('--c_pen', type=float, default=0., help='Diffusion coeff. Default 0.')
 parser.add_argument('--pi0', type=float, default=0.864, help='Pi0 value. Default 0.864')
 parser.add_argument('--filename', type=str, default='comp_eady', help='filename for pvd')
-parser.add_argument('--tmax', type=float, default=35, help='Final time in days. Default 35.')
+parser.add_argument('--tmax', type=float, default=30, help='Final time in days. Default 35.')
 parser.add_argument('--dumpt', type=float, default=2, help='Dump time for fields in hours. Default 6.')
 parser.add_argument('--checkt', type=float, default=2, help='Create checkpointing file every checkt hours. Default 2.')
 parser.add_argument('--diagt', type=float, default=2, help='Dump time for diagnostics in hours. Default 2.')
 parser.add_argument('--dt', type=float, default=300, help='Timestep in seconds. Default 300.')
 parser.add_argument('--a', type=float, default=-7.5, help='Strength of the initial amplitude. Default -7.5.')
 parser.add_argument('--vector_invariant', action="store_true", help='use vector invariant form.')
+parser.add_argument('--pickup', action='store_true', help='Pickup the result from the checkpoint.')
+parser.add_argument('--pickup_from', type=str, default='control')
 
 args = parser.parse_known_args()
 args = args[0]
@@ -242,7 +244,7 @@ nsolver = NonlinearVariationalSolver(nprob, solver_parameters=sparameters,
                                         options_prefix="nsolver")
 
 name = args.filename
-file_eady = VTKFile(name+'.pvd')
+file_eady = VTKFile(name+'.pvd', mode="a")
 
 Uns = Un.subfunctions
 un, rhon, thetan = tuple(Uns[i] for i in order)
@@ -255,7 +257,8 @@ dT.assign(dt)
 
 DG0 = FunctionSpace(mesh, "DG", 0)
 One = Function(DG0).assign(1.0)
-unn = 0.5*(inner(-un, n) + abs(inner(-un, n))) # gives fluxes *into* cell only
+n1 = as_vector([n[0], 0, n[2]])
+unn = 0.5*(inner(-un, n1) + abs(inner(-un, n1))) # gives fluxes *into* cell only
 v = TestFunction(DG0)
 Courant_num = Function(DG0, name="Courant numerator")
 Courant_num_form = dT*(
@@ -272,20 +275,8 @@ Courant.interpolate(Courant_num/Courant_denom)
 divu = Function(DG0, name="div(u)")
 divu.interpolate(div(un))
 
-# dump initial condition
-file_eady.write(un, rhon, thetan, delta_rho, delta_theta, Courant, divu)
-Unp1.assign(Un)
-
-t = 0.
-tdump = 0.
-tdiag = 0.
-tcheck = 0.
-itcount = 0
-stepcount = 0
-idx = 0
-
 # calculate maximum v
-def get_max_v(un, t, mesh):
+def get_max_v(un, mesh):
     y_vec = as_vector([0., 1., 0.])
     y_vel = inner(un, y_vec)
     DG0 = FunctionSpace(mesh, "DG", 0)
@@ -294,7 +285,7 @@ def get_max_v(un, t, mesh):
     return max_v
 
 # calculate rms of v
-def get_rms_v(un, t, mesh):
+def get_rms_v(un, mesh):
     y_vec = as_vector([0., 1., 0.])
     y_vel = inner(un, y_vec)
     DG0 = FunctionSpace(mesh, "DG", 0)
@@ -304,7 +295,7 @@ def get_rms_v(un, t, mesh):
     return rms_v
 
 # calculate v kinetic energy
-def get_kinetic_energy_v(un, rhon, t, mesh):
+def get_kinetic_energy_v(un, rhon, mesh):
     y_vec = as_vector([0., 1., 0.])
     y_vel = inner(un, y_vec)
     kineticv_form = 0.5*rhon*dot(y_vel,y_vel)
@@ -312,7 +303,7 @@ def get_kinetic_energy_v(un, rhon, t, mesh):
     return kineticv
 
 # calculate uw kinetic energy
-def get_kinetic_energy_uw(un, rhon, t, mesh):
+def get_kinetic_energy_uw(un, rhon, mesh):
     u_vec = as_vector([1., 0., 0.])
     u_vel = inner(un, u_vec)
     w_vec = as_vector([0., 0., 1.])
@@ -330,65 +321,98 @@ def get_potential_energy(rhon, thetan, Pi0, R_d, p_0, kappa, g, mesh):
     return potential
 
 # calculate rms of div(u)
-def get_rms_divu(un, t, mesh):
+def get_rms_divu(un, mesh):
     DG0 = FunctionSpace(mesh, "DG", 0)
     c = Function(DG0)
     c.assign(1)
     rms_divu = sqrt(assemble((dot(div(un),div(un)))*dx)/assemble(c*dx))
     return rms_divu
 
+kineticv_ini = get_kinetic_energy_v(un, rhon, mesh=mesh)
+kineticuw_ini = get_kinetic_energy_uw(un, rhon, mesh=mesh)
+potential_ini = get_potential_energy(rhon, thetan, Pi0=Pi0, R_d=R_d, p_0=p_0, kappa=kappa, g=g, mesh=mesh)
+total_energy_ini = kineticv_ini + kineticuw_ini + potential_ini
+
+t = 0.
+tdump = 0.
+tdiag = 0.
+tcheck = 0.
+itcount = 0
+stepcount = 0
+
+if args.pickup:
+    # pickup the result when --pickup is specified
+    chkfile = DumbCheckpoint(args.pickup_from, mode=FILE_READ)
+    chkfile.load(Un, name="mixedfunction")
+    chkfile.load(theta_back, name="theta_back")
+    chkfile.load(rho_back, name="rho_back")
+    t = chkfile.read_attribute("/", "time")
+    tdump = chkfile.read_attribute("/", "tdump")
+    tcheck = chkfile.read_attribute("/", "tcheck")
+    max_rmsv = chkfile.read_attribute("/", "max_rmsv")
+    time_at_max_rmsv = chkfile.read_attribute("/", "time_at_max_rmsv")
+    chkfile.close()
+    Unp1.assign(Un)
+    PETSc.Sys.Print("Restart from t = ", t, ", tdump = ", tdump, ", tcheck = ", tcheck)
+else:
+    # dump initial condition when --pickup is not specified
+    file_eady.write(un, rhon, thetan, delta_rho, delta_theta, Courant, divu)
+    Unp1.assign(Un)
+    # for recording rmsv
+    max_rmsv = 0
+    time_at_max_rmsv = 0
+    # create the initial checkpoint
+    thours = int(t/3600)
+    chkfile = DumbCheckpoint(name+"_"+str(thours)+"h", mode=FILE_CREATE)
+    chkfile.store(Un)
+    chkfile.store(theta_back)
+    chkfile.store(rho_back)
+    chkfile.write_attribute("/", "time", t)
+    chkfile.write_attribute("/", "tdump", tdump)
+    chkfile.write_attribute("/", "tcheck", tcheck)
+    chkfile.write_attribute("/", "max_rmsv", max_rmsv)
+    chkfile.write_attribute("/", "time_at_max_rmsv", time_at_max_rmsv)
+    chkfile.close()
+    PETSc.Sys.Print("Checkpointed at t = ", t)
+
+
 # store diagnostics at the initial stage
 max_v_list = []
-max_v = get_max_v(un, t=t, mesh=mesh)
+max_v = get_max_v(un, mesh=mesh)
 max_v_list.append(max_v)
 PETSc.Sys.Print("max_v =", max_v_list)
 
 rms_v_list = []
-rms_v = get_rms_v(un, t=t, mesh=mesh)
+rms_v = get_rms_v(un, mesh=mesh)
 rms_v_list.append(rms_v)
 PETSc.Sys.Print("rms_v =", rms_v_list)
 
 kineticv_list = []
-kineticv_ini = get_kinetic_energy_v(un, rhon, t=t, mesh=mesh)
-kineticv_list.append(kineticv_ini-kineticv_ini)
+kineticv = get_kinetic_energy_v(un, rhon, mesh=mesh)
+kineticv_list.append(kineticv-kineticv_ini)
 PETSc.Sys.Print("kineticv_diff =", kineticv_list)
 
 kineticuw_list = []
-kineticuw_ini = get_kinetic_energy_uw(un, rhon, t=t, mesh=mesh)
-kineticuw_list.append(kineticuw_ini-kineticuw_ini)
+kineticuw = get_kinetic_energy_uw(un, rhon, mesh=mesh)
+kineticuw_list.append(kineticuw-kineticuw_ini)
 PETSc.Sys.Print("kineticuw_diff =", kineticuw_list)
 
 potential_list = []
-potential_ini = get_potential_energy(rhon, thetan, Pi0=Pi0, R_d=R_d, p_0=p_0, kappa=kappa, g=g, mesh=mesh)
-potential_list.append(potential_ini-potential_ini)
+potential = get_potential_energy(rhon, thetan, Pi0=Pi0, R_d=R_d, p_0=p_0, kappa=kappa, g=g, mesh=mesh)
+potential_list.append(potential-potential_ini)
 PETSc.Sys.Print("potential_diff =", potential_list)
 
 total_energy_list = []
-total_energy_ini = kineticv_ini + kineticuw_ini + potential_ini
-total_energy_list.append(total_energy_ini-total_energy_ini)
+total_energy = kineticv + kineticuw + potential
+total_energy_list.append(total_energy-total_energy_ini)
 PETSc.Sys.Print("total_diff =", total_energy_list)
 
 rms_divu_list = []
-rms_divu = get_rms_divu(un, t=t, mesh=mesh)
+rms_divu = get_rms_divu(un, mesh=mesh)
 rms_divu_list.append(rms_divu)
 PETSc.Sys.Print("rms_divu =", rms_divu_list)
+PETSc.Sys.Print("Peak RMSV is ", max_rmsv, "at t = ", time_at_max_rmsv)
 
-
-# create checkpoint
-thours = int(t/3600)
-chkfile = DumbCheckpoint(name+"_"+str(thours)+"h", mode=FILE_CREATE)
-chkfile.store(Un)
-chkfile.store(theta_back)
-chkfile.store(rho_back)
-chkfile.write_attribute("/", "time", t)
-chkfile.write_attribute("/", "tdump", tdump)
-chkfile.write_attribute("/", "tcheck", tcheck)
-chkfile.close()
-PETSc.Sys.Print("Checkpointed at t = ", t)
-
-# for recording rmsv
-max_rmsv = 0
-time_at_max_rmsv = 0
 
 # time loop
 PETSc.Sys.Print('tmax', tmax, 'dt', dt)
@@ -403,7 +427,7 @@ while t < tmax - 0.5*dt:
     Un.assign(Unp1)
 
     # calculate and store max rmsv
-    rmsv = get_rms_v(un, t=t, mesh=mesh)
+    rmsv = get_rms_v(un, mesh=mesh)
     if rmsv > max_rmsv:
         max_rmsv = rmsv
         time_at_max_rmsv = t
@@ -424,7 +448,6 @@ while t < tmax - 0.5*dt:
     #checkpointing every tcheck hours
     if tcheck > checkt - dt*0.5:
         tcheck -= checkt
-        idx += 1
         thours = int(t/3600)
         chkfile = DumbCheckpoint(name+"_"+str(thours)+"h", mode=FILE_CREATE)
         chkfile.store(Un)
@@ -435,31 +458,24 @@ while t < tmax - 0.5*dt:
         chkfile.write_attribute("/", "tcheck", tcheck)
         chkfile.write_attribute("/", "max_rmsv", max_rmsv)
         chkfile.write_attribute("/", "time_at_max_rmsv", time_at_max_rmsv)
-        chkfile.write_attribute("/", "max_v_list", max_v_list)
-        chkfile.write_attribute("/", "rms_v_list", rms_v_list)
-        chkfile.write_attribute("/", "kineticv_list", kineticv_list)
-        chkfile.write_attribute("/", "kineticuw_list", kineticuw_list)
-        chkfile.write_attribute("/", "potential_list", potential_list)
-        chkfile.write_attribute("/", "total_energy_list", total_energy_list)
-        chkfile.write_attribute("/", "rms_divu_list", rms_divu_list)
         chkfile.close()
         PETSc.Sys.Print("Checkpointed at t = ", t)
 
     if tdiag > diagt - dt*0.5:
         # calculate and store max_v
-        max_v = get_max_v(un, t=t, mesh=mesh)
+        max_v = get_max_v(un, mesh=mesh)
         max_v_list.append(max_v)
         PETSc.Sys.Print("max_v =", max_v_list)
         # calculate and store rms_v
-        rms_v = get_rms_v(un, t=t, mesh=mesh)
+        rms_v = get_rms_v(un, mesh=mesh)
         rms_v_list.append(rms_v)
         PETSc.Sys.Print("rms_v =", rms_v_list)
         # calculate and store kineticv
-        kineticv = get_kinetic_energy_v(un, rhon, t=t, mesh=mesh)
+        kineticv = get_kinetic_energy_v(un, rhon, mesh=mesh)
         kineticv_list.append(kineticv-kineticv_ini)
         PETSc.Sys.Print("kineticv_diff =", kineticv_list)
         # calculate and store kineticuw
-        kineticuw = get_kinetic_energy_uw(un, rhon, t=t, mesh=mesh)
+        kineticuw = get_kinetic_energy_uw(un, rhon, mesh=mesh)
         kineticuw_list.append(kineticuw-kineticuw_ini)
         PETSc.Sys.Print("kineticuw_diff =", kineticuw_list)
         # calculate and store potential energy
@@ -471,9 +487,10 @@ while t < tmax - 0.5*dt:
         total_energy_list.append(total_energy-total_energy_ini)
         PETSc.Sys.Print("total_diff =", total_energy_list)
         # calculate and store rms_divu
-        rms_divu = get_rms_divu(un, t=t, mesh=mesh)
+        rms_divu = get_rms_divu(un, mesh=mesh)
         rms_divu_list.append(rms_divu)
         PETSc.Sys.Print("rms_divu =", rms_divu_list)
+        PETSc.Sys.Print("Peak RMSV is ", max_rmsv, "at t = ", time_at_max_rmsv)
 
         tdiag -= diagt
 
