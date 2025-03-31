@@ -44,8 +44,8 @@ markers = ["+", "s", "o", "v", "^", "<", ">", "1", "2", "3"]
 
 # plt.legend(prop={'size':10}, loc="lower right")
 
-# plt.xlabel(r'$\Delta$x', fontsize=14)
-# #plt.xlim(0,25)
+# plt.xlabel(r'$\Delta x$', fontsize=14)
+# #plt.xlim(2.0e4,7.0e4) 
 # #plt.ylim(0,50)
 # plt.ylabel(r'rhonorm', fontsize=14)
 # #plt.ylim(1.e-5,1.e-1)
@@ -67,8 +67,8 @@ plt.yscale("log")
 
 plt.legend(prop={'size':10}, loc="lower right")
 
-plt.xlabel(r'$\Delta$x', fontsize=14)
-#plt.xlim(0,25)
+plt.xlabel(r'$\Delta x$', fontsize=14)
+plt.xlim(2.0e4,7.0e4)
 #plt.ylim(0,50)
 plt.ylabel(r'$L_2$ norms in $\theta$', fontsize=14)
 #plt.ylim(1.e-5,1.e-1)
@@ -90,8 +90,8 @@ plt.yscale("log")
 
 plt.legend(prop={'size':10}, loc="lower right")
 
-plt.xlabel(r'$\Delta$x', fontsize=14)
-#plt.xlim(0,25)
+plt.xlabel(r'$\Delta x$', fontsize=14)
+plt.xlim(2.0e4,7.0e4)
 #plt.ylim(0,50)
 plt.ylabel(r'$L_2$ norms in $\mathbf{u}$', fontsize=14)
 #plt.ylim(1.e-5,1.e-1)
