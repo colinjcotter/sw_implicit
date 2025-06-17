@@ -95,21 +95,26 @@ rho_back = fd.Function(V2).assign(rhon)
 
 lines_parameters = {
     "snes_converged_reason": None,
-    "mat_type": "matfree",
+    #"mat_type": "matfree",
     "ksp_type": "gmres",
     "ksp_converged_reason": None,
     "ksp_atol": 1e-8,
     "ksp_rtol": 1e-8,
     "ksp_max_it": 400,
     "pc_type": "python",
-    "pc_python_type": "firedrake.AssembledPC",
-    "assembled_pc_type": "python",
-    "assembled_pc_python_type": "firedrake.ASMStarPC",
-    "assembled_pc_star_construct_dim": 0,
-    "assembled_pc_star_sub_sub_pc_factor_mat_ordering_type": "rcm",
-    "assembled_pc_star_sub_sub_pc_factor_reuse_ordering": None,
-    "assembled_pc_star_sub_sub_pc_factor_reuse_fill": None,
-    "assembled_pc_star_sub_sub_pc_factor_fill": 1.2,
+    #"pc_python_type": "firedrake.AssembledPC",
+    #"assembled_pc_type": "python",
+    #"assembled_pc_python_type": "firedrake.ASMStarPC",
+    #"assembled_pc_star_construct_dim": 0,
+    #"assembled_pc_star_sub_sub_pc_factor_mat_ordering_type": "rcm",
+    #"assembled_pc_star_sub_sub_pc_factor_reuse_ordering": None,
+    #"assembled_pc_star_sub_sub_pc_factor_reuse_fill": None,
+    #"assembled_pc_star_sub_sub_pc_factor_fill": 1.2,
+    "pc_python_type": "firedrake.ASMStarPC",
+    "pc_star_construct_dim": 0,
+    "pc_star_sub_sub_pc_type": "lu",
+    "pc_star_sub_sub_ksp_type": "preonly",
+
 }
 
 a = fd.Constant(5.0e3)
@@ -160,7 +165,7 @@ fd.assemble(One*v*fd.dx, tensor=Courant_denom)
 Courant = fd.Function(DG0, name="Courant")
 
 fd.assemble(Courant_num_form, tensor=Courant_num)
-Courant.assign(Courant_num/Courant_denom)
+Courant.interpolate(Courant_num/Courant_denom)
 
 file_gw.write(un, rhon, thetan, delta_rho, delta_theta, Courant)
 Unp1.assign(Un)

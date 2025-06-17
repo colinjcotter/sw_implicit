@@ -2,16 +2,13 @@ from firedrake import *
 
 mesh = UnitIntervalMesh(1)
 V = FunctionSpace(mesh, "DG", 0)
-W = V * V * V
-# q_v, R_c, R_e
+W = V
 
 q_T = Constant(1.0)
 
-U0 = Function(W)
-q0_v, R0_c, R0_e = split(U0)
+q0_v = Function(W)
 
-U1 = Function(W)
-q1_v, R1_c, R1_e = split(U1)
+q1_v = Function(W)
 
 tc = Constant(0.)
 
@@ -20,14 +17,9 @@ dtc = Constant(dt)
 
 qsat = Constant(1.2) - sin(tc)
 
-dq_v, dR_c, dR_e = TestFunctions(W)
+dq_v = TestFunction(W)
 
-eqn = (
-    dq_v*(q1_v - q0_v
-          + dtc*(R1_c - R1_e))
-    + dR_c*(qsat - q1_v)
-    + dR_e*(qsat - q1_v)*(q_T - q1_v -R1_e)
-    )*dx
+eqn = dq_v*(q1_v - qsat)*dx
 
 # variational solver
 params = {
@@ -41,7 +33,7 @@ params = {
 }
 
 nproblem = NonlinearVariationalProblem(
-    eqn, U1)
+    eqn, q1_v)
 nsolver = NonlinearVariationalSolver(
     nproblem, solver_parameters=params)
 
@@ -50,18 +42,16 @@ nsolver = NonlinearVariationalSolver(
 lbound = Function(W).assign(PETSc.NINFINITY)
 ubound = Function(W).assign(PETSc.INFINITY)
 
-lbound.sub(1).assign(0.) #  R_c >= 0
+ubound.assign(q_T)
 
-q0_v, R0_c, R0_e = U0.subfunctions
 q0_v.assign(q_T)
 
 T = 10.
 t = 0.
-U1.assign(U0)
+q1_v.assign(q0_v)
 while t < T - dt:
     nsolver.solve(bounds=(lbound, ubound))
-    U0.assign(U1)
-    print(t, q0_v.dat.data[:], float(qsat),
-          R0_c.dat.data[:], R0_e.dat.data[:])
+    q0_v.assign(q1_v)
+    print("t", t, "q", q0_v.dat.data[:], "qsat", float(qsat))
     t += dt
     tc.assign(t)

@@ -299,7 +299,7 @@ class ManifoldTransfer(object):
         # list of flags to say if we've set up before
         self.ready = {}
         self.Ftransfer = TransferManager()
-        
+
     def prolong(self, coarse, fine):
         Vfine = FunctionSpace(fine.ufl_domain(),
                               fine.function_space().ufl_element())
