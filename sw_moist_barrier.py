@@ -297,8 +297,8 @@ minarg = fd.min_value(pow(rl, 2),
 bexpr = 2000.0*(1 - fd.sqrt(minarg)/rl)
 b.interpolate(bexpr)
 
-u0, D0, buoy0, qt0, qc0, Rc0 = Un.subfunctions
-u1, D1, buoy1, qt1, qc1, Rc1 = Unp1.subfunctions
+u0, D0, buoy0, qt0, qc0, Rv0 = Un.subfunctions
+u1, D1, buoy1, qt1, qc1, Rv1 = Unp1.subfunctions
 u0.assign(un)
 D0.assign(etan + H - b)
 
@@ -340,7 +340,7 @@ buoy0.interpolate(buoyexpr)
 
 # The below is from Nell Hartney
 # expression for initial water vapour depends on initial saturation
-qv0 = Function(V2).interpolate(mu2*qsat(D0, buoy0)) 
+qv0 = fd.Function(V2).interpolate(mu2*qsat(D0, buoy0)) 
 qt0.assign(qv0 + qc0)
 # cloud and rain initially zero
 
