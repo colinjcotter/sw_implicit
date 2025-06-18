@@ -209,6 +209,7 @@ sparameters = {
     "ksp_type": "gmres",
     #"ksp_monitor_true_residual": None,
     "ksp_converged_reason": None,
+    "snes_ksp_ew": None,
     #"ksp_view": None,
     "snes_stol": 1e-50,
     "snes_atol": 1e-50,
@@ -242,13 +243,9 @@ sparameters = {
     "mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
 }
 
-sparameters = {
-    "snes_monitor": None,
-    "snes_vi_monitor": None,
-    "ksp_type": "gmres",
-    "pc_type": "lu",
-    "pc_factor_mat_solver_type": "mumps"
-}
+bparameters = sparameters.copy()
+bparameters["snes_type"] = "ksponly"
+#sparameters["snes_ksp_ew"] = None
 
 dt = args.dt
 dT.assign(dt)
@@ -258,6 +255,10 @@ nprob = fd.NonlinearVariationalProblem(eqn, Unp1)
 nsolver = fd.NonlinearVariationalSolver(nprob,
                                         options_prefix="stepper",
                                         solver_parameters=sparameters)
+nsolver_update = fd.NonlinearVariationalSolver(nprob,
+                                        options_prefix="stepper",
+                                        solver_parameters=bparameters)
+
 vtransfer = mg.ManifoldTransfer()
 tm = fd.TransferManager()
 transfers = {
@@ -296,8 +297,8 @@ minarg = fd.min_value(pow(rl, 2),
 bexpr = 2000.0*(1 - fd.sqrt(minarg)/rl)
 b.interpolate(bexpr)
 
-u0, D0, buoy0, qv0, qc0, Rc0 = Un.subfunctions
-u1, D1, buoy1, qv1, qc1, Rc1 = Unp1.subfunctions
+u0, D0, buoy0, qt0, qc0, Rc0 = Un.subfunctions
+u1, D1, buoy1, qt1, qc1, Rc1 = Unp1.subfunctions
 u0.assign(un)
 D0.assign(etan + H - b)
 
@@ -339,7 +340,8 @@ buoy0.interpolate(buoyexpr)
 
 # The below is from Nell Hartney
 # expression for initial water vapour depends on initial saturation
-qv0.interpolate(mu2*qsat(D0, buoy0)) 
+qv0 = Function(V2).interpolate(mu2*qsat(D0, buoy0)) 
+qt0.assign(qv0 + qc0)
 # cloud and rain initially zero
 
 q = fd.TrialFunction(V0)
@@ -356,6 +358,7 @@ file_sw = VTKFile(name+'.pvd')
 etan.assign(D0 - H + b)
 un.assign(u0)
 qsolver.solve()
+qv0.assign(qt0-qc0)
 file_sw.write(u0, etan, buoy0, qv0, qc0, qn) #, qrn)
 Unp1.assign(Un)
 
@@ -379,16 +382,16 @@ while t < tmax + 0.5*dt:
     tdump += dt
 
     res = 1e10
+    alpha.assign(1.0)
     Unp1.assign(Un)
+    qc1.interpolate(max_value(qc1, 1.0e-1))
+    Unp1_old.assign(Unp1)
+    nsolver.solve()
     while res > tol:
-        qc1.interpolate(max_value(qc1, 1.0e-1))
+        alpha.assign(alpha/10)
         Unp1_old.assign(Unp1)
-        eq = fd.assemble(eqn).dat.data
-        for i, line in enumerate(eq):
-            print(i, line)
-        #print(np.linalg.norm(fd.assemble(eqn).dat[i].data), "eqn")
 
-        nsolver.solve()
+        nsolver_update.solve()
         res = fd.norm(Unp1-Unp1_old)/fd.norm(Unp1)
         PETSc.Sys.Print(res)
         
@@ -398,7 +401,8 @@ while t < tmax + 0.5*dt:
         etan.assign(D0 - H + b)
         un.assign(u0)
         qsolver.solve()
-        file_sw.write(u0, etan, buoy0, qv0, qt0, qc0, qn) #, qrn)
+        qv0.assign(qt0-qc0)
+        file_sw.write(u0, etan, buoy0, qv0, qc0, qn) #, qrn)
         tdump -= dumpt
     stepcount += 1
     itcount += nsolver.snes.getLinearSolveIterations()
