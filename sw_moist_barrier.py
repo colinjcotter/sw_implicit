@@ -82,11 +82,12 @@ degree = args.degree
 V1 = fd.FunctionSpace(mesh, "BDM", degree+1)
 V2 = fd.FunctionSpace(mesh, "DG", degree)
 V0 = fd.FunctionSpace(mesh, "CG", degree+2)
-W = fd.MixedFunctionSpace((V1, V2, V2, V2, V2, V2))
-# velocity, depth, buoyancy, total water, cloud, evaporation rate (can
+W = fd.MixedFunctionSpace((V1, V2, V2, V2, V2, V2, V2))
+# velocity, depth, buoyancy, total water, cloud, vapour latent variable,
+#evaporation rate (can
 # be negative)
 # NO RAIN AT THE MOMENT
-du, dD, dbuoy, dqt, dqc, dRv = fd.TestFunctions(W)
+du, dD, dbuoy, dqt, dqc, dpsi, dRv = fd.TestFunctions(W)
 
 Omega = fd.Constant(7.292e-5)  # rotation rate
 f = 2*Omega*cz/fd.Constant(R0)  # Coriolis parameter
@@ -105,9 +106,9 @@ Unp1 = fd.Function(W)
 Unp1_old = fd.Function(W)
 
 
-u0, D0, buoy0, qt0, qc0, Rv0 = fd.split(Un)
-u1, D1, buoy1, qt1, qc1, Rv1 = fd.split(Unp1)
-u1_old, D1_old, buoy1_old, qt1_old, qc1_old, Rv1_old = fd.split(Unp1_old)
+u0, D0, buoy0, qt0, qc0, psi0, Rv0 = fd.split(Un)
+u1, D1, buoy1, qt1, qc1, psi1, Rv1 = fd.split(Unp1)
+u1_old, D1_old, buoy1_old, qt1_old, qc1_old, psi1_old, Rv1_old = fd.split(Unp1_old)
 n = fd.FacetNormal(mesh)
 
 
@@ -187,11 +188,14 @@ eqn = (
     + dqt*(qt1 - qt0)*dx
     + (1-beta)*dT*q_op(dqt, u0, qt0)
     + beta*dT*q_op(dqt, u1, qt1) # total water
-    
+
     # equation qv = min(q_T, q_sat)
     # solved as q_sat - (q_T - q_c) OxO q_c >= 0
-    + dqc*(qsat(D1, buoy1) - qt1 + qc1
-           + (fd.ln(qc1) - fd.ln(qc1_old))/alpha)*dx_v # cloud
+    + dqc*(alpha*(qsat(D1, buoy1) - qt1 + qc1) + psi1 - psi1_old)*dx # cloud
+
+    # latent variable equation for vapour
+    + dpsi*qc1*dx
+    - dpsi*fd.exp(psi1)*dx
 
     + dRv*(qc1 - qc0)*dx
     + (1-beta)*dT*q_op(dRv, u0, qc0)
@@ -206,7 +210,7 @@ sparameters = {
     "snes_monitor": None,
     "snes_vi_monitor": None,
     #"mat_type": "matfree",
-    "ksp_type": "gmres",
+    "ksp_type": "fgmres",
     #"ksp_monitor_true_residual": None,
     "ksp_converged_reason": None,
     "snes_ksp_ew": None,
@@ -220,9 +224,8 @@ sparameters = {
     "pc_type": "mg",
     "pc_mg_cycle_type": "v",
     "pc_mg_type": "multiplicative",
-    "mg_levels_ksp_type": "richardson",
-    "mg_levels_ksp_richardson_scale": 0.95,
-    "mg_levels_ksp_max_it": 1,
+    "mg_levels_ksp_type": "gmres",
+    "mg_levels_ksp_max_it": 3,
     "mg_levels_ksp_convergence_test": "skip",
     "mg_levels_pc_type": "python",
     "mg_levels_pc_python_type": "firedrake.PatchPC",
@@ -235,8 +238,8 @@ sparameters = {
     "mg_levels_patch_pc_patch_precompute_element_tensors": True,
     "mg_levels_patch_pc_patch_symmetrise_sweep": False,
     "mg_levels_patch_sub_ksp_type": "preonly",
-    "mg_levels_patch_sub_pc_type": "ilu",
-    "mg_levels_patch_sub_pc_factor_shift_type": "nonzero",
+    "mg_levels_patch_sub_pc_type": "lu",
+    #"mg_levels_patch_sub_pc_factor_shift_type": "nonzero",
     "mg_coarse_pc_type": "python",
     "mg_coarse_pc_python_type": "firedrake.AssembledPC",
     "mg_coarse_assembled_pc_type": "lu",
@@ -245,7 +248,7 @@ sparameters = {
 
 bparameters = sparameters.copy()
 bparameters["snes_type"] = "ksponly"
-#sparameters["snes_ksp_ew"] = None
+#bparameters["snes_rtol"] = 1.0e-3
 
 dt = args.dt
 dT.assign(dt)
@@ -297,10 +300,11 @@ minarg = fd.min_value(pow(rl, 2),
 bexpr = 2000.0*(1 - fd.sqrt(minarg)/rl)
 b.interpolate(bexpr)
 
-u0, D0, buoy0, qt0, qc0, Rv0 = Un.subfunctions
-u1, D1, buoy1, qt1, qc1, Rv1 = Unp1.subfunctions
+u0, D0, buoy0, qt0, qc0, psi0, Rv0 = Un.subfunctions
+u1, D1, buoy1, qt1, qc1, psi1, Rv1 = Unp1.subfunctions
 u0.assign(un)
 D0.assign(etan + H - b)
+psi0.assign(-1.0e50)
 
 eps = fd.Constant(1.0/300)
 EQ = 30*eps
@@ -371,6 +375,8 @@ Area = fd.assemble(One*fd.dx)
 
 tol = 1.0e-8
 
+print = PETSc.Sys.Print
+
 def max_value(s1, s2):
     return (s1 + s2 + abs(s1 - s2))/2
 
@@ -384,17 +390,17 @@ while t < tmax + 0.5*dt:
     res = 1e10
     alpha.assign(1.0)
     Unp1.assign(Un)
-    qc1.interpolate(max_value(qc1, 1.0e-1))
+    #qc1.interpolate(max_value(qc1, 1.0e-1))
     Unp1_old.assign(Unp1)
     nsolver.solve()
     while res > tol:
-        alpha.assign(alpha/10)
+        alpha.assign(alpha*2)
         Unp1_old.assign(Unp1)
-
         nsolver_update.solve()
+        #nsolver.solve()
         res = fd.norm(Unp1-Unp1_old)/fd.norm(Unp1)
         PETSc.Sys.Print(res)
-        
+
     Un.assign(Unp1)
     
     if tdump > dumpt - dt*0.5:
