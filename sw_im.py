@@ -205,7 +205,6 @@ else:
 # Df(x^k).xp = -f(x^k)
 # x^{k+1} = x^k + xp.
 
-
 # linear shallow water operator
 class HelmholtzPC(fd.AuxiliaryOperatorPC):
     def form(self, pc, test, trial):
@@ -513,8 +512,6 @@ elif args.solver_mode == 'patch':
         "patch_sub_pc_type": "lu",
         "patch_sub_pc_factor_shift_type": "nonzero"
     }
-
-
     
 dt = 60*60*args.dt
 dT.assign(dt)

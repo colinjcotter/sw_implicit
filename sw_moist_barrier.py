@@ -82,12 +82,13 @@ degree = args.degree
 V1 = fd.FunctionSpace(mesh, "BDM", degree+1)
 V2 = fd.FunctionSpace(mesh, "DG", degree)
 V0 = fd.FunctionSpace(mesh, "CG", degree+2)
-W = fd.MixedFunctionSpace((V1, V2, V2, V2, V2, V2, V2))
-# velocity, depth, buoyancy, total water, cloud, vapour latent variable,
+W = fd.MixedFunctionSpace((V1, V2, V2, V2, V2, V2))
+# velocity, depth, buoyancy, total water, cloud, NO vapour latent variable,
 #evaporation rate (can
 # be negative)
 # NO RAIN AT THE MOMENT
-du, dD, dbuoy, dqt, dqc, dpsi, dRv = fd.TestFunctions(W)
+#du, dD, dbuoy, dqt, dqc, dpsi, dRv = fd.TestFunctions(W)
+du, dD, dbuoy, dqt, dqc, dRv = fd.TestFunctions(W)
 
 Omega = fd.Constant(7.292e-5)  # rotation rate
 f = 2*Omega*cz/fd.Constant(R0)  # Coriolis parameter
@@ -106,9 +107,12 @@ Unp1 = fd.Function(W)
 Unp1_old = fd.Function(W)
 
 
-u0, D0, buoy0, qt0, qc0, psi0, Rv0 = fd.split(Un)
-u1, D1, buoy1, qt1, qc1, psi1, Rv1 = fd.split(Unp1)
-u1_old, D1_old, buoy1_old, qt1_old, qc1_old, psi1_old, Rv1_old = fd.split(Unp1_old)
+#u0, D0, buoy0, qt0, qc0, psi0, Rv0 = fd.split(Un)
+#u1, D1, buoy1, qt1, qc1, psi1, Rv1 = fd.split(Unp1)
+#u1_old, D1_old, buoy1_old, qt1_old, qc1_old, psi1_old, Rv1_old = fd.split(Unp1_old)
+u0, D0, buoy0, qt0, qc0, Rv0 = fd.split(Un)
+u1, D1, buoy1, qt1, qc1, Rv1 = fd.split(Unp1)
+u1_old, D1_old, buoy1_old, qt1_old, qc1_old, Rv1_old = fd.split(Unp1_old)
 n = fd.FacetNormal(mesh)
 
 
@@ -171,7 +175,8 @@ def qsat(D, buoy):
 beta = fd.Constant(0.5) # offcentering parameter (1.0 = BE)
 alpha = fd.Constant(1.0) # scaling parameter for barrier method
 
-eqn = (
+# the equation we aspire to solving
+eqn0 = (
     fd.inner(du, u1 - u0)*dx
     + (1-beta)*dT*u_op(du, u0, D0, buoy0)
     + beta*dT*u_op(du, u1, D1, buoy1)
@@ -191,11 +196,11 @@ eqn = (
 
     # equation qv = min(q_T, q_sat)
     # solved as q_sat - (q_T - q_c) OxO q_c >= 0
-    + dqc*(alpha*(qsat(D1, buoy1) - qt1 + qc1) + psi1 - psi1_old)*dx # cloud
+    + dqc*(alpha*(qsat(D1, buoy1) - qt1 + qc1))*dx # cloud
 
     # latent variable equation for vapour
-    + dpsi*qc1*dx
-    - dpsi*fd.exp(psi1)*dx
+    #+ dpsi*qc1*dx
+    #- dpsi*fd.exp(psi1)*dx
 
     + dRv*(qc1 - qc0)*dx
     + (1-beta)*dT*q_op(dRv, u0, qc0)
@@ -204,14 +209,22 @@ eqn = (
     #  evaporation rate
 )
 
+# the equation we solve in each iteration
+
+#eqn = eqn0 + dqc*(psi1 - psi1_old)*dx
+eqn = eqn0 + dqc*(fd.ln(qc1) - fd.ln(qc1_old))*dx
+
 # monolithic solver options
 
 sparameters = {
     "snes_monitor": None,
+    "snes_converged_reason": None,
+    "snes_atol": 0,
+    "snes_stol": 0,
     "snes_vi_monitor": None,
     #"mat_type": "matfree",
     "ksp_type": "fgmres",
-    #"ksp_monitor_true_residual": None,
+    "ksp_monitor_true_residual": None,
     "ksp_converged_reason": None,
     "snes_ksp_ew": None,
     #"ksp_view": None,
@@ -239,7 +252,7 @@ sparameters = {
     "mg_levels_patch_pc_patch_symmetrise_sweep": False,
     "mg_levels_patch_sub_ksp_type": "preonly",
     "mg_levels_patch_sub_pc_type": "lu",
-    #"mg_levels_patch_sub_pc_factor_shift_type": "nonzero",
+    "mg_levels_patch_sub_pc_factor_shift_type": "nonzero",
     "mg_coarse_pc_type": "python",
     "mg_coarse_pc_python_type": "firedrake.AssembledPC",
     "mg_coarse_assembled_pc_type": "lu",
@@ -247,8 +260,8 @@ sparameters = {
 }
 
 bparameters = sparameters.copy()
-bparameters["snes_type"] = "ksponly"
-#bparameters["snes_rtol"] = 1.0e-3
+#bparameters["snes_type"] = "ksponly"
+bparameters["snes_rtol"] = 1.0e-3
 
 dt = args.dt
 dT.assign(dt)
@@ -300,11 +313,13 @@ minarg = fd.min_value(pow(rl, 2),
 bexpr = 2000.0*(1 - fd.sqrt(minarg)/rl)
 b.interpolate(bexpr)
 
-u0, D0, buoy0, qt0, qc0, psi0, Rv0 = Un.subfunctions
-u1, D1, buoy1, qt1, qc1, psi1, Rv1 = Unp1.subfunctions
+#u0, D0, buoy0, qt0, qc0, psi0, Rv0 = Un.subfunctions
+#u1, D1, buoy1, qt1, qc1, psi1, Rv1 = Unp1.subfunctions
+u0, D0, buoy0, qt0, qc0, Rv0 = Un.subfunctions
+u1, D1, buoy1, qt1, qc1, Rv1 = Unp1.subfunctions
 u0.assign(un)
 D0.assign(etan + H - b)
-psi0.assign(-1.0e50)
+#psi0.assign(-1.0e50)
 
 eps = fd.Constant(1.0/300)
 EQ = 30*eps
@@ -366,6 +381,13 @@ qv0.assign(qt0-qc0)
 file_sw.write(u0, etan, buoy0, qv0, qc0, qn) #, qrn)
 Unp1.assign(Un)
 
+def max_value(s1, s2):
+    return (s1 + s2 + abs(s1 - s2))/2
+qc1.interpolate(max_value(qc1, 1.0e-1))
+
+Unp1_old.assign(Unp1)
+print(fd.assemble(eqn).dat.data[4], "h")
+
 PETSc.Sys.Print('tmax', tmax, 'dt', dt)
 itcount = 0
 stepcount = 0
@@ -373,13 +395,18 @@ stepcount = 0
 One = fd.Function(V2).assign(1.0)
 Area = fd.assemble(One*fd.dx)
 
-tol = 1.0e-8
+tol = 1.0e-3 # tolerance for bounds constraints
+rtol = 1.0e-8 # relative tolerance for proximal solver
 
-print = PETSc.Sys.Print
+#print = PETSc.Sys.Print
 
-def max_value(s1, s2):
-    return (s1 + s2 + abs(s1 - s2))/2
-
+def convergence_check():
+    cf = fd.assemble(eqn0)
+    #cf.dat.data[5][np.where(Unp1.dat.data[5] < tol)] = 0.
+    with cf.dat.vec_ro as v:
+        norm0 = v.norm(PETSc.NormType.NORM_INFINITY)
+    return norm0
+        
 while t < tmax + 0.5*dt:
     PETSc.Sys.Print(t)
     #PETSc.Sys.Print("rain", fd.norm(qr0)/Area)
@@ -388,18 +415,23 @@ while t < tmax + 0.5*dt:
     tdump += dt
 
     res = 1e10
-    alpha.assign(1.0)
+    alpha.assign(100)
     Unp1.assign(Un)
-    #qc1.interpolate(max_value(qc1, 1.0e-1))
+    qc1.interpolate(max_value(qc1, 1.0e-1))
     Unp1_old.assign(Unp1)
+
+    cf = fd.assemble(eqn)
+    with cf.dat.vec_ro as v:
+        res0 = v.norm(PETSc.NormType.NORM_INFINITY)
     nsolver.solve()
-    while res > tol:
+    
+    while res > rtol:
         alpha.assign(alpha*2)
         Unp1_old.assign(Unp1)
         nsolver_update.solve()
         #nsolver.solve()
-        res = fd.norm(Unp1-Unp1_old)/fd.norm(Unp1)
-        PETSc.Sys.Print(res)
+        res = convergence_check()/res0
+        PETSc.Sys.Print(res, res0, "convergence test")
 
     Un.assign(Unp1)
     

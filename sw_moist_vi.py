@@ -2,6 +2,8 @@ import firedrake as fd
 #get command arguments
 from petsc4py import PETSc
 from firedrake.output import VTKFile
+import finat
+import numpy as np
 
 PETSc.Sys.popErrorHandler()
 import mg
@@ -11,7 +13,7 @@ parser.add_argument('--base_level', type=int, default=1, help='Base refinement l
 parser.add_argument('--ref_level', type=int, default=5, help='Refinement level of icosahedral grid. Default 5.')
 parser.add_argument('--dmax', type=float, default=15, help='Final time in days. Default 15.')
 parser.add_argument('--dumpt', type=float, default=24, help='Dump time in hours. Default 24.')
-parser.add_argument('--dt', type=float, default=1, help='Timestep in hours. Default 1')
+parser.add_argument('--dt', type=float, default=360, help='Timestep in seconds. Default 360')
 parser.add_argument('--filename', type=str, default='w5moistvi')
 parser.add_argument('--coords_degree', type=int, default=1, help='Degree of polynomials for sphere mesh approximation.')
 parser.add_argument('--degree', type=int, default=1, help='Degree of finite element space (the DG space).')
@@ -80,13 +82,13 @@ degree = args.degree
 V1 = fd.FunctionSpace(mesh, "BDM", degree+1)
 V2 = fd.FunctionSpace(mesh, "DG", degree)
 V0 = fd.FunctionSpace(mesh, "CG", degree+2)
-W = fd.MixedFunctionSpace((V1, V2, V2,
-                           V2, V2,
-                           V2, V2))
-# velocity, depth, total temperature, vapour, evaporation rate, cloud condensation rate, cloud
+W = fd.MixedFunctionSpace((V1, V2, V2, V2, V2, V2))
+# velocity, depth, buoyancy, total water, cloud, NO vapour latent variable,
+#evaporation rate (can
+# be negative)
 # NO RAIN AT THE MOMENT
-
-du, dD, dbuoy, dqv, dRe, dRc, dqc = fd.TestFunctions(W)
+#du, dD, dbuoy, dqt, dqc, dpsi, dRv = fd.TestFunctions(W)
+du, dD, dbuoy, dqt, dqc, dRv = fd.TestFunctions(W)
 
 Omega = fd.Constant(7.292e-5)  # rotation rate
 f = 2*Omega*cz/fd.Constant(R0)  # Coriolis parameter
@@ -102,9 +104,15 @@ dx = fd.dx
 
 Un = fd.Function(W)
 Unp1 = fd.Function(W)
+Unp1_old = fd.Function(W)
 
-u0, D0, buoy0, qv0, Re0, qc0, Rc0 = fd.split(Un)
-u1, D1, buoy1, qv1, Re1, qc1, Rc1 = fd.split(Unp1)
+
+#u0, D0, buoy0, qt0, qc0, psi0, Rv0 = fd.split(Un)
+#u1, D1, buoy1, qt1, qc1, psi1, Rv1 = fd.split(Unp1)
+#u1_old, D1_old, buoy1_old, qt1_old, qc1_old, psi1_old, Rv1_old = fd.split(Unp1_old)
+u0, D0, buoy0, qt0, qc0, Rv0 = fd.split(Un)
+u1, D1, buoy1, qt1, qc1, Rv1 = fd.split(Unp1)
+u1_old, D1_old, buoy1_old, qt1_old, qc1_old, Rv1_old = fd.split(Unp1_old)
 n = fd.FacetNormal(mesh)
 
 
@@ -153,6 +161,8 @@ q_precip = fd.Constant(1.0e-4)
 
 dx0 = dx('everywhere', metadata = {'quadrature_degree': 4,
                                    'representation': 'quadrature'})
+quad_rule = finat.quadrature.make_quadrature(V2.finat_element.cell, 1, "KMV")
+dx_v = dx(scheme=quad_rule)
 #dx0 = dx
 #dS = dS('everywhere', metadata = {'quadrature_degree': 4,
 #                                  'representation': 'quadrature'})
@@ -160,20 +170,12 @@ dx0 = dx('everywhere', metadata = {'quadrature_degree': 4,
 def qsat(D, buoy):
     return q0/g/(D + b)*fd.exp(20*(1-buoy/g))
 
-#u0, D0, buoy0, qv0, Re0, qc0, Rc0 = fd.split(Un)
-#u1, D1, buoy1, qv1, Re1, qc1, Rc1 = fd.split(Unp1)
-#du, dD, dbuoy, dqv, dRe, dRc, dqc = fd.TestFunctions(W)
-
 # b = g(1-theta)
-# theta_T = theta + Lq_v
-# theta = theta_T - Lq_v
-# b = g(1-theta_T) + gLq_v
-buoyT0 = buoy0 + g*L*qv0
-buoyT1 = buoy1 + g*L*qv1
 
 beta = fd.Constant(0.5) # offcentering parameter (1.0 = BE)
 alpha = fd.Constant(1.0) # scaling parameter for barrier method
 
+# the equation we aspire to solving
 eqn = (
     fd.inner(du, u1 - u0)*dx
     + (1-beta)*dT*u_op(du, u0, D0, buoy0)
@@ -183,95 +185,98 @@ eqn = (
     + (1-beta)*dT*h_op(dD, u0, D0)
     + beta*dT*h_op(dD, u1, D1)
 
-    + dbuoy*(buoyT1 - buoyT0)*dx
-    + (1-beta)*dT*q_op(dbuoy, u0, buoyT0)
-    + beta*dT*q_op(dbuoy, u1, buoyT1)
-    # constraint qv <= qsat
-    + dRe*(qsat(D1, buoy1) - qv1 + ln(Re1)/alpha)*fd.dx
+    + dbuoy*(buoy1 - buoy0)*dx
+    + (1-beta)*dT*q_op(dbuoy, u0, buoy0)
+    + beta*dT*q_op(dbuoy, u1, buoy1)
+    + dT*g*Rv1*L*dbuoy*dx
 
-    + dqv*(qv1 - qv0)*dx
-    + (1-beta)*dT*q_op(dqv, u0, qv0)
-    + beta*dT*q_op(dqv, u1, qv1)
-    + dT*Re1*fd.dx  #  evaporation rate
-    # constraint qc >= 0
-    + dRc*(qc1 + ln(Rc1)/alpha)*fd.dx
+    + dqt*(qt1 - qt0)*dx
+    + (1-beta)*dT*q_op(dqt, u0, qt0)
+    + beta*dT*q_op(dqt, u1, qt1) # total water
 
-    + dqc*(qcv1 - qcv0)*dx
-    + (1-beta)*dT*q_op(dqv, u0, qcv0)
-    + beta*dT*q_op(dqv, u1, qcv1)
-    + dT*Rc1*fd.dx
+    # equation qv = min(q_T, q_sat)
+    # solved as q_sat - (q_T - q_c) OxO q_c >= 0
+    + dqc*(qsat(D1, buoy1) - qt1 + qc1)*dx # cloud
+
+    # latent variable equation for vapour
+    #+ dpsi*qc1*dx
+    #- dpsi*fd.exp(psi1)*dx
+
+    + dRv*(qc1 - qc0)*dx
+    + (1-beta)*dT*q_op(dRv, u0, qc0)
+    + beta*dT*q_op(dRv, u1, qc1)
+    + dT*dRv*Rv1*fd.dx
+    #  evaporation rate
 )
+
+# the equation we solve in each iteration
 
 # monolithic solver options
 
 sparameters = {
+    "snes_type": "vinewtonrsls",
+    "snes_vi_monitor": None,
     "snes_monitor": None,
+    "snes_converged_reason": None,
     "snes_vi_monitor": None,
     #"mat_type": "matfree",
     "ksp_type": "gmres",
     #"ksp_monitor_true_residual": None,
     "ksp_converged_reason": None,
+    #"snes_ksp_ew": None,
     #"ksp_view": None,
-    "snes_stol": 1e-50,
-    "snes_atol": 1e-50,
-    "snes_rtol": 1e-10,
+    "snes_stol": 0,
+    "snes_atol": 0,
+    "snes_rtol": 1e-6,
     "ksp_atol": 1e-50,
-    "ksp_rtol": 1e-6,
+    "ksp_rtol": 1e-8,
     "ksp_max_it": 400,
-    "pc_type": "mg",
-    "pc_mg_cycle_type": "v",
-    "pc_mg_type": "multiplicative",
-    "mg_levels_ksp_type": "richardson",
-    "mg_levels_ksp_richardson_scale": 0.95,
-    "mg_levels_ksp_max_it": 1,
-    "mg_levels_ksp_convergence_test": "skip",
-    "mg_levels_pc_type": "python",
-    "mg_levels_pc_python_type": "firedrake.PatchPC",
-    "mg_levels_patch_pc_patch_save_operators": True,
-    "mg_levels_patch_pc_patch_partition_of_unity": True,
-    "mg_levels_patch_pc_patch_sub_mat_type": "seqdense",
-    "mg_levels_patch_pc_patch_construct_dim": 0,
-    "mg_levels_patch_pc_patch_construct_type": "star",
-    "mg_levels_patch_pc_patch_local_type": "additive",
-    "mg_levels_patch_pc_patch_precompute_element_tensors": True,
-    "mg_levels_patch_pc_patch_symmetrise_sweep": False,
-    "mg_levels_patch_sub_ksp_type": "preonly",
-    "mg_levels_patch_sub_pc_type": "ilu",
-    "mg_levels_patch_sub_pc_factor_shift_type": "nonzero",
-    "mg_coarse_pc_type": "python",
-    "mg_coarse_pc_python_type": "firedrake.AssembledPC",
-    "mg_coarse_assembled_pc_type": "lu",
-    "mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
-}
+    "pc_type": "bjacobi",
+    "sub_pc_type": "ilu",
+    #"pc_factor_mat_solver_type": "mumps",
+    # "pc_mg_cycle_type": "v",
+    # "pc_mg_type": "multiplicative",
+    # "mg_levels_ksp_type": "gmres",
+    # "mg_levels_ksp_max_it": 3,
+    # "mg_levels_ksp_convergence_test": "skip",
+    # "mg_levels_pc_type": "python",
+    # "mg_levels_pc_python_type": "firedrake.PatchPC",
+    # "mg_levels_patch_pc_patch_save_operators": True,
+    # "mg_levels_patch_pc_patch_partition_of_unity": True,
+    # "mg_levels_patch_pc_patch_sub_mat_type": "seqdense",
+    # "mg_levels_patch_pc_patch_construct_dim": 0,
+    # "mg_levels_patch_pc_patch_construct_type": "star",
+    # "mg_levels_patch_pc_patch_local_type": "additive",
+    # "mg_levels_patch_pc_patch_precompute_element_tensors": True,
+    # "mg_levels_patch_pc_patch_symmetrise_sweep": False,
+    # "mg_levels_patch_sub_ksp_type": "preonly",
+    # "mg_levels_patch_sub_pc_type": "lu",
+    # "mg_levels_patch_sub_pc_factor_shift_type": "nonzero",
+    # "mg_coarse_pc_type": "python",
+    # "mg_coarse_pc_python_type": "firedrake.AssembledPC",
+    # "mg_coarse_assembled_pc_type": "lu",
+    # "mg_coarse_assembled_pc_factor_mat_solver_type": "mumps",
+    }
 
-sparameters = {
-    "snes_monitor": None,
-    "snes_vi_monitor": None,
-    "ksp_type": "gmres",
-    "pc_type": "lu",
-    "pc_factor_mat_solver_type": "mumps"
-}
+bparameters = sparameters.copy()
+#bparameters["snes_type"] = "ksponly"
+bparameters["snes_rtol"] = 1.0e-3
 
+dt = args.dt
+dT.assign(dt)
+t = 0.
 
 lbound = fd.Function(W).assign(PETSc.NINFINITY)
 ubound = fd.Function(W).assign(PETSc.INFINITY)
 
-# 0   1   2      3     4    5      6
-# u0, D0, buoy0, qsat0, qvp0, qc0, qr0 = fd.split(Un)
-
-if args.bounds:
-    sparameters["snes_type"] = "vinewtonrsls"
-    ubound.sub(4).assign(0.) #  qprime <= 0
-    ubound.sub(5).assign(q_precip) #  qc <= q_precip
-
-dt = 60*60*args.dt
-dT.assign(dt)
-t = 0.
+sparameters["snes_type"] = "vinewtonrsls"
+lbound.sub(4).assign(0.) #  qc >= 0
 
 nprob = fd.NonlinearVariationalProblem(eqn, Unp1)
 nsolver = fd.NonlinearVariationalSolver(nprob,
                                         options_prefix="stepper",
                                         solver_parameters=sparameters)
+
 vtransfer = mg.ManifoldTransfer()
 tm = fd.TransferManager()
 transfers = {
@@ -310,9 +315,13 @@ minarg = fd.min_value(pow(rl, 2),
 bexpr = 2000.0*(1 - fd.sqrt(minarg)/rl)
 b.interpolate(bexpr)
 
-u0, D0, buoy0, qsat0, qvp0, qc0, qr0n = Un.subfunctions
+#u0, D0, buoy0, qt0, qc0, psi0, Rv0 = Un.subfunctions
+#u1, D1, buoy1, qt1, qc1, psi1, Rv1 = Unp1.subfunctions
+u0, D0, buoy0, qt0, qc0, Rv0 = Un.subfunctions
+u1, D1, buoy1, qt1, qc1, Rv1 = Unp1.subfunctions
 u0.assign(un)
 D0.assign(etan + H - b)
+#psi0.assign(-1.0e50)
 
 eps = fd.Constant(1.0/300)
 EQ = 30*eps
@@ -352,10 +361,8 @@ buoy0.interpolate(buoyexpr)
 
 # The below is from Nell Hartney
 # expression for initial water vapour depends on initial saturation
-initial_msat = q0/(g*D0 + g*bexpr) * fd.exp(20*theta_expr)
-vexpr = mu2 * initial_msat
-qsat0.project(qsat(D0, buoy0))
-qvp0.project(vexpr - qsat0)
+qv0 = fd.Function(V2).interpolate(mu2*qsat(D0, buoy0)) 
+qt0.assign(qv0 + qc0)
 # cloud and rain initially zero
 
 q = fd.TrialFunction(V0)
@@ -372,16 +379,8 @@ file_sw = VTKFile(name+'.pvd')
 etan.assign(D0 - H + b)
 un.assign(u0)
 qsolver.solve()
-buoyn = fd.Function(V2, name="Buoyancy")
-qvn = fd.Function(V2, name="Water Vapour")
-qcn = fd.Function(V2, name="Cloud Vapour")
-qrn = fd.Function(V2, name="Rain")
-Dn.interpolate(D0)
-qvn.project(qvp0 + qsat(D0, buoy0))
-qcn.interpolate(qc0)
-qrn.interpolate(qr0)
-buoyn.interpolate(buoy0)
-file_sw.write(un, etan, buoyn, qn, qvn, qcn, qrn)
+qv0.assign(qt0-qc0)
+file_sw.write(u0, etan, buoy0, qv0, qc0, qn) #, qrn)
 Unp1.assign(Un)
 
 PETSc.Sys.Print('tmax', tmax, 'dt', dt)
@@ -390,29 +389,26 @@ stepcount = 0
 
 One = fd.Function(V2).assign(1.0)
 Area = fd.assemble(One*fd.dx)
-
+        
 while t < tmax + 0.5*dt:
     PETSc.Sys.Print(t)
-    PETSc.Sys.Print("rain", fd.norm(qr0)/Area, "cloud", fd.norm(qc0)/Area)
+    #PETSc.Sys.Print("rain", fd.norm(qr0)/Area)
+    PETSc.Sys.Print("cloud", fd.norm(qc0)/Area)
     t += dt
     tdump += dt
 
-    with PETSc.Log.Event("nsolver"):
-        if args.bounds:
-            nsolver.solve(bounds=(lbound, ubound))
-        else:
-            nsolver.solve()
+    Unp1.assign(Un)
+
+    nsolver.solve(bounds=(lbound, ubound))
+
     Un.assign(Unp1)
     
     if tdump > dumpt - dt*0.5:
         etan.assign(D0 - H + b)
         un.assign(u0)
         qsolver.solve()
-        buoyn.interpolate(buoy0)
-        qvn.project(qvp0 + qsat0)
-        qcn.interpolate(qc0)
-        qrn.interpolate(qr0)
-        file_sw.write(un, etan, buoyn, qn, qvn, qcn, qrn)
+        qv0.assign(qt0-qc0)
+        file_sw.write(u0, etan, buoy0, qv0, qc0, qn) #, qrn)
         tdump -= dumpt
     stepcount += 1
     itcount += nsolver.snes.getLinearSolveIterations()
