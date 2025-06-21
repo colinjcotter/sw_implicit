@@ -1,3 +1,6 @@
+# Implement the min operator using the formulation of Chen, Yu, Han
+# and Ma (2021)
+
 import firedrake as fd
 #get command arguments
 from petsc4py import PETSc
@@ -84,7 +87,8 @@ V2 = fd.FunctionSpace(mesh, "DG", degree)
 V0 = fd.FunctionSpace(mesh, "CG", degree+2)
 Vd = fd.FunctionSpace(mesh, "DG", 0)
 W = fd.MixedFunctionSpace((V1, V2, V2, V2, V2, V2, V2))
-# velocity, depth, buoyancy, total water, cloud, vapour latent variable,
+# velocity, depth, buoyancy, total water, cloud,
+# vapour min operator regularisation coefficient,
 #evaporation rate (can
 # be negative)
 # NO RAIN AT THE MOMENT
@@ -104,12 +108,9 @@ dx = fd.dx
 
 Un = fd.Function(W)
 Unp1 = fd.Function(W)
-Unp1_old = fd.Function(W)
 
 u0, D0, buoy0, qt0, qc0, psi0, Rv0 = fd.split(Un)
 u1, D1, buoy1, qt1, qc1, psi1, Rv1 = fd.split(Unp1)
-u1_old, D1_old, buoy1_old, qt1_old,\
-    qc1_old, psi1_old, Rv1_old = fd.split(Unp1_old)
 
 n = fd.FacetNormal(mesh)
 
@@ -173,8 +174,16 @@ def qsat(D, buoy):
 beta = fd.Constant(0.5) # offcentering parameter (1.0 = BE)
 alpha = fd.Constant(1.0) # scaling parameter for barrier method
 
+def smooth_abs(u, mu):
+    return fd.sqrt(mu**2 + u**2) - mu
+
+def smooth_min(a, b, mu):
+    # if a>b, |a-b| = a-b so a+b-|a-b| = a+b-(a-b) = 2*b
+    # if a<b, |a-b| = b-a so a+b-|a-b| = a+b-(b-a) = 2*a
+    return (a+b-smooth_abs(a-b, mu))/2
+
 # the equation we aspire to solving
-eqn0 = (
+eqn = (
     fd.inner(du, u1 - u0)*dx
     + (1-beta)*dT*u_op(du, u0, D0, buoy0)
     + beta*dT*u_op(du, u1, D1, buoy1)
@@ -193,22 +202,22 @@ eqn0 = (
     + beta*dT*q_op(dqt, u1, qt1) # total water
 
     # equation qv = min(q_T, q_sat)
-    # solved as q_sat - (q_T - q_c) OxO q_c >= 0
-    + dqc*(alpha*(qsat(D1, buoy1) - qt1 + qc1))*dx_v # cloud
+    # so qc = q_T - min(q_T, q_sat)
+    + dqc*(qc1 - qt1 + smooth_min(qt1, qsat(D1, buoy1),
+                                  psi1))*dx_v # cloud
 
-    # latent variable equation for vapour
-    + dpsi*qc1*dx_v
-    - dpsi*fd.exp(psi1)*dx_v
-
+    # smoothing parameter for min
+    + dpsi*psi1*dx_v
+    
     + dRv*(qc1 - qc0)*dx
     + (1-beta)*dT*q_op(dRv, u0, qc0)
     + beta*dT*q_op(dRv, u1, qc1)
-    + dT*dRv*Rv1*fd.dx
+    + dT*dRv*Rv1*dx
     #  evaporation rate
 )
 
-# the equation we solve in each iteration
-eqn = eqn0 + dqc*(psi1 - psi1_old)*dx_v
+eqn_shift = eqn + dpsi*psi1*dx_v
+J = fd.derivative(eqn_shift, Unp1)
 
 # monolithic solver options
 
@@ -268,9 +277,6 @@ nprob = fd.NonlinearVariationalProblem(eqn, Unp1)
 nsolver = fd.NonlinearVariationalSolver(nprob,
                                         options_prefix="stepper",
                                         solver_parameters=sparameters)
-nsolver_update = fd.NonlinearVariationalSolver(nprob,
-                                        options_prefix="stepper",
-                                        solver_parameters=bparameters)
 
 vtransfer = mg.ManifoldTransfer()
 tm = fd.TransferManager()
@@ -312,8 +318,6 @@ b.interpolate(bexpr)
 
 u0, D0, buoy0, qt0, qc0, psi0, Rv0 = Un.subfunctions
 u1, D1, buoy1, qt1, qc1, psi1, Rv1 = Unp1.subfunctions
-u1_old, D1_old, buoy1_old, qt1_old, \
-    qc1_old, psi1_old, Rv1_old = Unp1_old.subfunctions
 u0.assign(un)
 D0.assign(etan + H - b)
 #psi0.assign(-1.0e50)
@@ -382,8 +386,6 @@ def max_value(s1, s2):
     return (s1 + s2 + abs(s1 - s2))/2
 qc1.interpolate(max_value(qc1, 1.0e-1))
 
-Unp1_old.assign(Unp1)
-
 print = PETSc.Sys.Print
 PETSc.Sys.Print('tmax', tmax, 'dt', dt)
 itcount = 0
@@ -413,24 +415,9 @@ while t < tmax + 0.5*dt:
     alpha0 = 1.0e-2
     alpha.assign(alpha0)
     Unp1.assign(Un)
-    Unp1_old.assign(Unp1)
-    psi1.interpolate(fd.exp(qc1))
-    psi1_old.interpolate(fd.exp(qc1_old))
+    psi1.assign(1.0)
 
     nsolver.solve()
-
-    count = 0
-    while res > rtol:
-        count += 1
-        if alpha0 < 1.0:
-            alpha0 = 1.0
-        else:
-            alpha0 = alpha0*2
-        alpha.assign(alpha0)
-        Unp1_old.assign(Unp1)
-        nsolver_update.solve()
-        res = fd.norm(qc1-qc1_old)/fd.norm(qc1)
-        PETSc.Sys.Print(res, "convergence test")
 
     Un.assign(Unp1)
     
